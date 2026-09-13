@@ -3,10 +3,35 @@ on:
   push:
     tags:
       - v1.1.0-pre1
+  workflow_dispatch:
 permissions:
   contents: write
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare installers
+        run: |
+          cp packaging/Windows.bat Windows.bat
+          cp packaging/MacOS MacOS.
+          cp packaging/Linux Linux.
+          chmod +x MacOS. Linux.
+      - name: Publish installers
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.1.0-pre1
+          name: Digital Archaeologist v1.1.0-pre1
+          prerelease: true
+          generate_release_notes: true
+          files: |
+            Windows.bat
+            MacOS.
+            Linux.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
   build:
+    needs: prepare
     strategy:
       matrix:
         include:
@@ -26,21 +51,12 @@ jobs:
       - name: Package
         shell: bash
         run: |
-          if [ "${{ runner.os }}" = "Windows" ]; then cp build/Release/archaeologist.exe "${{ matrix.asset }}"; else cp build/archaeologist "${{ matrix.asset }}"; chmod +x "${{ matrix.asset }}"; fi
-      - uses: actions/upload-artifact@v4
+          if [ "${{ runner.os }}" = "Windows" ]; then cp build/Release/archaeologist.exe "${{ matrix.asset }}"; else cp build/archaeologist "${{ matrix.asset }}"; fi
+      - name: Publish binary
+        uses: softprops/action-gh-release@v2
         with:
-          name: ${{ matrix.asset }}
-          path: ${{ matrix.asset }}
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: release-assets
-          merge-multiple: true
-      - uses: actions/checkout@v4
-      - name: Create release
+          tag_name: v1.1.0-pre1
+          prerelease: true
+          files: ${{ matrix.asset }}
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: mkdir -p release-assets && cp packaging/MacOS release-assets/MacOS. && cp packaging/Linux release-assets/Linux. && chmod +x release-assets/MacOS. release-assets/Linux. && gh release create v1.1.0-pre1 release-assets/* packaging/Windows.bat packaging/MacOS packaging/Linux --title "Digital Archaeologist v1.1.0-pre1" --prerelease --generate-notes
+          GITHUB_TOKEN: ${{ github.token }}
