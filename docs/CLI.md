@@ -1,16 +1,20 @@
-﻿# CLI reference
+# CLI
 
-`archaeologist <file>` is the default extension-independent analyzer.
+`archaeologist [options] <file>`
 
-Profiles:
-- `--unknown` / `-u`: conservative unknown-format investigation.
-- `--linux` / `-L`: Linux-oriented interpretation.
-- `--macos` / `-M`: macOS-oriented interpretation.
-- `--windows` / `-W`: Windows-oriented interpretation.
-- `--password` / `-p`: encryption/recovery metadata only.
-
-Transport:
-- `--transport-encode file`: emits Base64 representing the exact bytes.
-- `--transport-decode textfile`: reconstructs bytes into `textfile.decoded`.
-
-The analyzer never trusts the extension. Confidence is evidence-based. A 100% result means a known signature matched; it is not a claim that every nested structure is decoded.
+- `--json` machine-readable report
+- `--hash` SHA-256
+- `--entropy` entropy classification
+- `--stats` byte statistics
+- `--strings` printable strings
+- `--hex [N]` hexdump
+- `--partitions` MBR/GPT evidence
+- `--report FILE` save a report
+- `--scan DIR` recursively inventory files
+- `--find TEXT` search ASCII
+- `--find-hex HEX` search bytes
+- `--base64-encode` transport encoding
+- `--deep` enable extra research messaging
+- `--unknown=windows|macos|linux` OS-focused unknown analysis
+- `--help unknown` unknown-format help
+- `--help password` authorized recovery guidance
