@@ -6,7 +6,7 @@
 #include <vector>
 
 static void help(){
- std::cout<<"Digital Archaeologist v1.1.0-pre1\n\n"
+ std::cout<<"Digital Archaeologist v1.2.0\n\n"
  <<"Usage: archaeologist [options] <file>\n\n"
  <<"Core:\n  archaeologist <file>       Analyze by bytes, not extension\n  -u, --unknown <file>       Unknown-format research profile\n  -L, --linux <file>         Linux/filesystem profile\n  -M, --macos <file>         macOS/filesystem profile\n  -W, --windows <file>       Windows/filesystem profile\n  -p, --password <file>      Encryption/recovery metadata profile\n\n"
  <<"Transport:\n  --transport-encode <file>  Base64 encode exact bytes to stdout\n  --transport-decode <file>  Decode Base64 text file to <file>.decoded\n\n"
@@ -20,7 +20,7 @@ int main(int argc,char**argv){
   if(argc<2){help();return 2;}
   std::string a=argv[1];
   if(a=="-h"||a=="--help"){help();return 0;}
-  if(a=="--version"){std::cout<<"1.1.0-pre1\n";return 0;}
+  if(a=="--version"){std::cout<<"1.2.0\n";return 0;}
   if(a=="--help"&&argc>2){help();return 0;}
   if(a=="--transport-encode"){
    if(argc<3)throw std::runtime_error("missing file"); std::cout<<da::base64_encode(read_bytes(argv[2]))<<"\n";return 0;
