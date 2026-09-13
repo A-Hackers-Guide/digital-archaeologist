@@ -43,4 +43,4 @@ jobs:
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: cp packaging/MacOS release-assets/MacOS. && cp packaging/Linux release-assets/Linux. && chmod +x release-assets/MacOS. release-assets/Linux. && gh release create v1.1.0-pre1 release-assets/* packaging/Windows.bat packaging/MacOS packaging/Linux --title "Digital Archaeologist v1.1.0-pre1" --prerelease --generate-notes
+        run: mkdir -p release-assets && cp packaging/MacOS release-assets/MacOS. && cp packaging/Linux release-assets/Linux. && chmod +x release-assets/MacOS. release-assets/Linux. && gh release create v1.1.0-pre1 release-assets/* packaging/Windows.bat packaging/MacOS packaging/Linux --title "Digital Archaeologist v1.1.0-pre1" --prerelease --generate-notes
