@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+PREFIX="/usr/local/bin"
+TMP="${TMPDIR:-/tmp}/archaeologist.$$.bin"
+URL="https://github.com/A-Hackers-Guide/digital-archaeologist/releases/download/v1.1.0-pre1/archaeologist-macos"
+cleanup(){ rm -f "$TMP"; }
+trap cleanup EXIT
+if [ "$(id -u)" -ne 0 ]; then
+  exec sudo "$0" "$@"
+fi
+curl -fL --proto '=https' --tlsv1.2 "$URL" -o "$TMP"
+install -m 0755 "$TMP" "$PREFIX/archaeologist"
+echo "Digital Archaeologist installed to $PREFIX/archaeologist"
+echo "Run: archaeologist --help"
