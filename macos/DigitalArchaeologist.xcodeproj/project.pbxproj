@@ -1,0 +1,19 @@
+﻿// !$*UTF8*$!
+{
+ archiveVersion = 1;
+ classes = { };
+ objectVersion = 56;
+ objects = {
+  111111111111111111111111 /* Project */ = { isa = PBXProject; buildConfigurationList = 222222222222222222222222; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; hasScannedForEncodings = 0; mainGroup = 333333333333333333333333; productRefGroup = 444444444444444444444444; projectDirPath = ""; projectRoot = ""; targets = (555555555555555555555555); };
+ 333333333333333333333333 /* Main */ = { isa = PBXGroup; children = (666666666666666666666666); sourceTree = "<group>"; };
+ 444444444444444444444444 /* Products */ = { isa = PBXGroup; children = (); name = Products; sourceTree = "<group>"; };
+ 555555555555555555555555 /* Target */ = { isa = PBXNativeTarget; buildConfigurationList = 777777777777777777777777; buildPhases = (888888888888888888888888); buildRules = (); dependencies = (); name = DigitalArchaeologist; productName = DigitalArchaeologist; productType = "com.apple.product-type.tool"; };
+ 666666666666666666666666 /* README */ = { isa = PBXFileReference; lastKnownFileType = text; path = "../../README.md"; sourceTree = "<group>"; };
+ 888888888888888888888888 /* Script */ = { isa = PBXShellScriptBuildPhase; buildActionMask = 2147483647; files = (); inputPaths = (); name = "Build with Command Line Tools"; outputPaths = (); runOnlyForDeploymentPostprocessing = 0; shellPath = /bin/sh; shellScript = "set -eu\nif ! xcode-select --print-path >/dev/null 2>&1; then echo 'Digital Archaeologist requires Xcode Command Line Tools.'; exit 2; fi\nif ! xcrun --find clang++ >/dev/null 2>&1; then echo 'clang++ was not found in the active developer directory.'; exit 2; fi\nROOT=\\\"$SRCROOT/../..\\\"\ncmake -S \\\"$ROOT\\\" -B \\\"$ROOT/build-xcode\\\" -G Ninja\ncmake --build \\\"$ROOT/build-xcode\\\" --parallel\nctest --test-dir \\\"$ROOT/build-xcode\\\" --output-on-failure\n"; };
+ 222222222222222222222222 /* Project Config */ = { isa = XCConfigurationList; buildConfigurations = (999999999999999999999999); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+ 777777777777777777777777 /* Target Config */ = { isa = XCConfigurationList; buildConfigurations = (AAAAAAAAAAAAAAAAAAAAAAAA); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+ 999999999999999999999999 = { isa = XCBuildConfiguration; buildSettings = { ALWAYS_SEARCH_USER_PATHS = NO; CLANG_CXX_LANGUAGE_STANDARD = "c++17"; PRODUCT_NAME = "DigitalArchaeologist"; }; name = Release; };
+ AAAAAAAAAAAAAAAAAAAAAAAA = { isa = XCBuildConfiguration; buildSettings = { PRODUCT_NAME = "DigitalArchaeologist"; }; name = Release; };
+ };
+ rootObject = 111111111111111111111111;
+}

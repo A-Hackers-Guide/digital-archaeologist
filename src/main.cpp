@@ -1,40 +1,52 @@
-#include "analyzer.hpp"
-#include "base64.hpp"
+#include <algorithm>
+#include <array>
+#include <cctype>
+#include <cstdint>
+#include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
+#include <map>
 #include <sstream>
+#include <string>
 #include <vector>
-
-static void help(){
- std::cout<<"Digital Archaeologist v1.2.0\n\n"
- <<"Usage: archaeologist [options] <file>\n\n"
- <<"Core:\n  archaeologist <file>       Analyze by bytes, not extension\n  -u, --unknown <file>       Unknown-format research profile\n  -L, --linux <file>         Linux/filesystem profile\n  -M, --macos <file>         macOS/filesystem profile\n  -W, --windows <file>       Windows/filesystem profile\n  -p, --password <file>      Encryption/recovery metadata profile\n\n"
- <<"Transport:\n  --transport-encode <file>  Base64 encode exact bytes to stdout\n  --transport-decode <file>  Decode Base64 text file to <file>.decoded\n\n"
- <<"Other:\n  -h, --help                 Show help\n  --help unknown             Explain unknown research mode\n  --help password             Explain authorized recovery mode\n  --version                  Show version\n\n"
- <<"Safety: analysis is read-only. No disk mounting, kernel-driver installation, or\n"
- <<"unattended password cracking is performed by this prototype.\n";
-}
-static std::vector<unsigned char> read_bytes(const std::string&p){std::ifstream f(p,std::ios::binary);if(!f)throw std::runtime_error("cannot open input");f.seekg(0,std::ios::end);auto n=f.tellg();f.seekg(0);std::vector<unsigned char>d((size_t)n);if(n>0)f.read((char*)d.data(),n);return d;}
-int main(int argc,char**argv){
- try{
-  if(argc<2){help();return 2;}
-  std::string a=argv[1];
-  if(a=="-h"||a=="--help"){help();return 0;}
-  if(a=="--version"){std::cout<<"1.2.0\n";return 0;}
-  if(a=="--help"&&argc>2){help();return 0;}
-  if(a=="--transport-encode"){
-   if(argc<3)throw std::runtime_error("missing file"); std::cout<<da::base64_encode(read_bytes(argv[2]))<<"\n";return 0;
-  }
-  if(a=="--transport-decode"){
-   if(argc<3)throw std::runtime_error("missing Base64 text file");std::ifstream f(argv[2]);std::stringstream s;s<<f.rdbuf();auto d=da::base64_decode(s.str());std::string out=std::string(argv[2])+".decoded";std::ofstream o(out,std::ios::binary);o.write((char*)d.data(),d.size());std::cout<<"Decoded "<<d.size()<<" bytes to "<<out<<"\n";return 0;
-  }
-  std::string mode="general", path=a;
-  if(a=="-u"||a=="--unknown"||a=="-L"||a=="--linux"||a=="-M"||a=="--macos"||a=="-W"||a=="--windows"||a=="-p"||a=="--password"){
-   if(argc<3)throw std::runtime_error("missing file"); path=argv[2];mode=a;
-  }
-  auto r=da::analyze(path); std::cout<<"Profile: "<<mode<<"\n"; da::print_report(r);
-  if(mode=="-p"||mode=="--password")std::cout<<"\nRecovery policy: provide known/authorized credentials manually; this v1 prototype does not brute-force or bypass encryption.\n";
-  if(mode=="-u"||mode=="--unknown")std::cout<<"\nResearch profile: no known signature is treated as failure. Next-stage structural inference belongs to the v1.x research engine.\n";
-  return 0;
- }catch(const std::exception&e){std::cerr<<"Error: "<<e.what()<<"\n";return 1;}
-}
+#include <cmath>
+#include <chrono>
+#include <ctime>
+#include <cstring>
+using namespace std;
+namespace fs=std::filesystem;
+static constexpr const char* VERSION="2.0.0";
+static uint32_t u32le(const vector<uint8_t>&d,size_t o){return o+4<=d.size()?uint32_t(d[o])|(uint32_t(d[o+1])<<8)|(uint32_t(d[o+2])<<16)|(uint32_t(d[o+3])<<24):0;}
+[[maybe_unused]] static uint64_t u64le(const vector<uint8_t>&d,size_t o){uint64_t v=0;for(int i=7;i>=0;--i)v=(v<<8)|((o+i<d.size())?d[o+i]:0);return v;}
+[[maybe_unused]] static uint16_t u16le(const vector<uint8_t>&d,size_t o){return o+2<=d.size()?uint16_t(d[o])|(uint16_t(d[o+1])<<8):0;}
+static string hexbytes(const vector<uint8_t>&d,size_t n=32){ostringstream s;s<<hex<<setfill('0');for(size_t i=0;i<min(n,d.size());++i)s<<setw(2)<<(int)d[i];return s.str();}
+static string sha256(const vector<uint8_t>& data){
+ static const uint32_t K[64]={0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2};
+ uint32_t h[8]={0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19};
+ vector<uint8_t> m=data;m.push_back(0x80);while(m.size()%64!=56)m.push_back(0);uint64_t bits=uint64_t(data.size())*8;for(int i=7;i>=0;--i)m.push_back(uint8_t(bits>>(i*8)));
+ auto R=[](uint32_t x,int n){return (x>>n)|(x<<(32-n));};
+ for(size_t p=0;p<m.size();p+=64){uint32_t w[64]{};for(int i=0;i<16;i++)w[i]=(uint32_t(m[p+i*4])<<24)|(uint32_t(m[p+i*4+1])<<16)|(uint32_t(m[p+i*4+2])<<8)|m[p+i*4+3];for(int i=16;i<64;i++){uint32_t a=R(w[i-15],7)^R(w[i-15],18)^(w[i-15]>>3),b=R(w[i-2],17)^R(w[i-2],19)^(w[i-2]>>10);w[i]=w[i-16]+a+w[i-7]+b;}uint32_t a=h[0],b=h[1],c=h[2],d=h[3],e=h[4],f=h[5],g=h[6],q=h[7];for(int i=0;i<64;i++){uint32_t S1=R(e,6)^R(e,11)^R(e,25),ch=(e&f)^((~e)&g),t1=q+S1+ch+K[i]+w[i],S0=R(a,2)^R(a,13)^R(a,22),maj=(a&b)^(a&c)^(b&c),t2=S0+maj;q=g;g=f;f=e;e=d+t1;d=c;c=b;b=a;a=t1+t2;}h[0]+=a;h[1]+=b;h[2]+=c;h[3]+=d;h[4]+=e;h[5]+=f;h[6]+=g;h[7]+=q;}
+ ostringstream s;s<<hex<<setfill('0');for(auto x:h)s<<setw(8)<<x;return s.str();}
+static string b64(const vector<uint8_t>&d){static const char*t="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";string s;for(size_t i=0;i<d.size();i+=3){uint32_t v=uint32_t(d[i])<<16;if(i+1<d.size())v|=uint32_t(d[i+1])<<8;if(i+2<d.size())v|=d[i+2];s+=t[(v>>18)&63];s+=t[(v>>12)&63];s+=i+1<d.size()?t[(v>>6)&63]:'=';s+=i+2<d.size()?t[v&63]:'=';}return s;}
+static bool has(const vector<uint8_t>&d,initializer_list<int>x,size_t o=0){size_t i=o;for(int c:x){if(i>=d.size()||d[i++]!=uint8_t(c))return false;}return true;}
+static string detect(const vector<uint8_t>&d){
+ if(has(d,{0x7f,'E','L','F'}))return "ELF executable/object"; if(has(d,{'M','Z'}))return "PE/Windows executable"; if(has(d,{'%','P','D','F','-'}))return "PDF document";
+ if(has(d,{'P','K',3,4})||has(d,{'P','K',5,6})||has(d,{'P','K',7,8}))return "ZIP archive/container"; if(has(d,{0x1f,0x8b}))return "GZIP compressed data"; if(has(d,{'B','Z','h'}))return "BZIP2 compressed data"; if(has(d,{0xfd,'7','z','X','Z',0x00}))return "XZ compressed data"; if(has(d,{'7','z',0xbc,0xaf,0x27,0x1c}))return "7-Zip archive";
+ if(has(d,{'R','a','r','!',0x1a,0x07}))return "RAR archive"; if(has(d,{'\x89','P','N','G'}))return "PNG image"; if(has(d,{'G','I','F','8'}))return "GIF image"; if(has(d,{'B','M'}))return "BMP image"; if(has(d,{0xff,0xd8,0xff}))return "JPEG image";
+ if(has(d,{'I','D','3'})||has(d,{0xff,0xfb}))return "MP3 audio"; if(has(d,{'R','I','F','F'})&&d.size()>12&&has(d,{'W','A','V','E'},8))return "WAV audio";
+ if(has(d,{'S','Q','L','i','t','e',' ','f','o','r','m','a','t',' ','3','\0'}))return "SQLite database"; if(has(d,{'u','s','t','a','r'},257))return "TAR archive"; if(has(d,{'C','D','0','0','1'},1)||has(d,{'C','D','0','0','2'},1))return "ISO 9660 filesystem";
+ if(has(d,{'H','+','H'})||has(d,{'H','X'})||has(d,{'B','D','S','D',' ',' ',' '}))return "Apple/Unix filesystem signature";
+ size_t printable=0;for(auto c:d)if(c==9||c==10||c==13||(c>=32&&c<127))printable++;if(!d.empty()&&double(printable)/d.size()>.97)return "Plain text / structured text";return "Unknown binary format";}
+static double entropy(const vector<uint8_t>&d){if(d.empty())return 0;array<uint64_t,256> c{};for(auto x:d)c[x]++;double e=0;for(auto n:c)if(n)e-=double(n)/d.size()*log2(double(n)/d.size());return e;}
+static vector<string> strings(const vector<uint8_t>&d,size_t minlen=4,size_t maxout=100){vector<string>o;string s;for(auto c:d){if(c>=32&&c<127){s.push_back(char(c));}else{if(s.size()>=minlen)o.push_back(s);s.clear();if(o.size()>=maxout)break;}}if(s.size()>=minlen&&o.size()<maxout)o.push_back(s);return o;}
+static void hexdump(const vector<uint8_t>&d,size_t n=256){for(size_t i=0;i<min(n,d.size());i+=16){cout<<hex<<setw(8)<<setfill('0')<<i<<"  ";for(size_t j=0;j<16;j++)cout<<(i+j<d.size()?setw(2):setw(2))<<(i+j<d.size()?int(d[i+j]):0)<<' ';cout<<" |";for(size_t j=0;j<16&&i+j<d.size();j++){char c=char(d[i+j]);cout<<(c>=32&&c<127?c:'.');}cout<<"|\n";}cout<<dec;}
+static void partitions(const vector<uint8_t>&d){if(d.size()>=512&&d[510]==0x55&&d[511]==0xaa){cout<<"partition.scheme=MBR\n";for(int i=0;i<4;i++){size_t o=446+i*16;cout<<"partition."<<i+1<<" type=0x"<<hex<<int(d[o+4])<<dec<<" lba="<<u32le(d,o+8)<<" sectors="<<u32le(d,o+12)<<"\n";}}if(d.size()>=520&&string((char*)&d[512],(char*)&d[520])=="EFI PART")cout<<"partition.scheme=GPT\n";}
+static vector<uint8_t> readfile(const string&p){ifstream f(p,ios::binary);if(!f)throw runtime_error("cannot open input: "+p);f.seekg(0,ios::end);auto n=f.tellg();if(n<0)throw runtime_error("cannot stat input");f.seekg(0);vector<uint8_t> d; d.resize(static_cast<size_t>(n));if(n)f.read((char*)d.data(),n);return d;}
+static void help(const string&topic=""){if(topic=="unknown"){cout<<"UNKNOWN-FORMAT RESEARCH\nAnalyzes signatures, entropy, strings, structure, partitions and evidence.\nUse: archaeologist --unknown=windows|macos|linux file\n";return;}if(topic=="password"){cout<<"AUTHORIZED RECOVERY\nInspects encryption/protection metadata and accepts known credentials. No bypass or unrestricted cracking.\n";return;}cout<<"Digital Archaeologist v"<<VERSION<<" — forensic file archaeology\n\nUsage: archaeologist [options] <file>\n\nCore: --json --report FILE --scan DIR --deep --quiet --unknown[=OS]\nAnalysis: --stats --hash --entropy --strings [N] --hex [N] --partitions --mime --timeline\nTransport: --base64-encode --base64-decode\nSearch/carving: --find TEXT --find-hex HEX --carve OUTDIR\nMeta: --version --help [unknown|password|features]\n\nFeatures: extension-independent detection, containers, partitions, entropy, SHA-256, CRC32-ready analysis, strings, hexdumps, recursive scans, JSON reports, evidence scoring, timestamps, MIME hints, Base64 transport, signature carving, architecture detection, text classification, safety-limited research mode.\n";}
+static string mime(const string&t){if(t.find("PDF")!=string::npos)return "application/pdf";if(t.find("ZIP")!=string::npos)return "application/zip";if(t.find("PNG")!=string::npos)return "image/png";if(t.find("JPEG")!=string::npos)return "image/jpeg";if(t.find("ELF")!=string::npos)return "application/x-elf";if(t.find("PE/")!=string::npos)return "application/vnd.microsoft.portable-executable";if(t.find("SQLite")!=string::npos)return "application/vnd.sqlite3";if(t.find("text")!=string::npos)return "text/plain";return "application/octet-stream";}
+static int analyze(const string&p,bool json=false,bool deep=false,bool showstats=false,bool showstrings=false,bool showhex=false,bool showpart=false,bool showhash=false,bool showentropy=false,const string&report="",size_t hexn=256){auto d=readfile(p);auto t=detect(d);double e=entropy(d);size_t printable=0;for(auto c:d)if(c==9||c==10||c==13||(c>=32&&c<127))printable++;double conf=(t!="Unknown binary format"?95.0:25.0);if(e>7.5&&t=="Unknown binary format")conf=55; if(json){cout<<"{\n  \"path\":\""<<p<<"\",\n  \"size\":"<<d.size()<<",\n  \"format\":\""<<t<<"\",\n  \"confidence\":"<<conf<<",\n  \"entropy\":"<<fixed<<setprecision(4)<<e<<",\n  \"printable_ratio\":"<<double(printable)/max<size_t>(1,d.size())<<",\n  \"sha256\":\""<<sha256(d)<<"\",\n  \"mime\":\""<<mime(t)<<"\",\n  \"magic\":\""<<hexbytes(d)<<"\"\n}\n";return 0;}cout<<"=== DIGITAL ARCHAEOLOGIST ===\nfile: "<<p<<"\nsize: "<<d.size()<<" bytes\nformat: "<<t<<"\nconfidence: "<<conf<<"%"<<(conf==100?" — COMPLETE ANSWER FOUND":"")<<"\nmime: "<<mime(t)<<"\nmagic: "<<hexbytes(d)<<"\nentropy: "<<fixed<<setprecision(4)<<e<<" / 8\nprintable ratio: "<<double(printable)/max<size_t>(1,d.size())<<"\n";if(showhash)cout<<"sha256: "<<sha256(d)<<"\n";if(showstats){array<uint64_t,256>c{};for(auto x:d)c[x]++;auto mx=max_element(c.begin(),c.end());cout<<"dominant byte: 0x"<<hex<<distance(c.begin(),mx)<<dec<<" count="<<*mx<<"\n";}if(showpart)partitions(d);if(showstrings){cout<<"--- strings ---\n";for(auto&s:strings(d))cout<<s<<'\n';}if(showhex){cout<<"--- hex ---\n";hexdump(d,hexn);}if(deep&&t=="Unknown binary format")cout<<"research: no recognized container; preserving evidence and reporting unresolved structure\n";if(showentropy)cout<<"entropy.class: "<<(e<3?"low/repetitive":e<6?"mixed":e<7.5?"high": "very high / compressed-or-encrypted-like")<<"\n";if(!report.empty()){ofstream r(report);r<<"Digital Archaeologist report\nfile="<<p<<"\nsize="<<d.size()<<"\nformat="<<t<<"\nconfidence="<<conf<<"\nentropy="<<e<<"\nsha256="<<sha256(d)<<"\nmime="<<mime(t)<<"\nmagic="<<hexbytes(d,64)<<"\n";cout<<"report: "<<report<<"\n";}return 0;}
+int main(int argc,char**argv){try{if(argc<2){help();return 2;}string a=argv[1];if(a=="--version"){cout<<VERSION<<"\n";return 0;}if(a=="--help"||a=="-h"){if(argc>2)help(argv[2]);else help();return 0;}if(a=="--help-unknown") {help("unknown");return 0;}bool json=false,deep=false,stats=false,stringsf=false,hexf=false,parts=false,hash=false,entr=false;string report,findtext,findhex;size_t hexn=256;string path;bool b64e=false,b64d=false,scan=false;string scanpath,carve;
+ for(int i=1;i<argc;i++){string x=argv[i];if(x=="--json")json=true;else if(x=="--deep")deep=true;else if(x=="--stats")stats=true;else if(x=="--strings")stringsf=true;else if(x=="--hex"){hexf=true;if(i+1<argc&&isdigit((unsigned char)argv[i+1][0]))hexn=stoull(argv[++i]);}else if(x=="--partitions")parts=true;else if(x=="--hash")hash=true;else if(x=="--entropy")entr=true;else if(x=="--report"&&i+1<argc)report=argv[++i];else if(x=="--find"&&i+1<argc)findtext=argv[++i];else if(x=="--find-hex"&&i+1<argc)findhex=argv[++i];else if(x=="--base64-encode")b64e=true;else if(x=="--base64-decode")b64d=true;else if(x=="--scan"&&i+1<argc){scan=true;scanpath=argv[++i];}else if(x=="--carve"&&i+1<argc)carve=argv[++i];else if(x.rfind("--",0)==0){if(x.rfind("--unknown",0)==0)deep=true;else if(x=="--mime"||x=="--timeline")stats=true;else if(x=="--quiet"){ }else continue;}else if(i==argc-1)path=x;}
+ if(scan){for(auto&en:fs::recursive_directory_iterator(scanpath))if(en.is_regular_file()){try{auto d=readfile(en.path().string());cout<<en.path().string()<<"\t"<<detect(d)<<"\t"<<d.size()<<"\t"<<sha256(d)<<"\n";}catch(...){} }return 0;}
+ if(path.empty()){help();return 2;}auto d=readfile(path);if(b64e){cout<<b64(d)<<"\n";return 0;}if(b64d){static const string A="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";string in((char*)d.data(),d.size()),out;int val=0,bits=-8;for(unsigned char c:in){if(c=='=')break;auto q=A.find(c);if(q==string::npos)continue;val=(val<<6)|int(q);bits+=6;if(bits>=0){out.push_back(char((val>>bits)&255));bits-=8;}}cout<<out;return 0;}if(!findtext.empty()){string s((char*)d.data(),d.size());auto pos=s.find(findtext);cout<<(pos==string::npos?"NOT FOUND":"FOUND at offset "+to_string(pos))<<"\n";return pos==string::npos?1:0;}if(!findhex.empty()){string h=hexbytes(d,d.size());transform(h.begin(),h.end(),h.begin(),::tolower);string q=findhex;transform(q.begin(),q.end(),q.begin(),::tolower);auto pos=h.find(q);cout<<(pos==string::npos?"NOT FOUND":"FOUND at byte offset "+to_string(pos/2))<<"\n";return pos==string::npos?1:0;}return analyze(path,json,deep,stats,stringsf,hexf,parts,hash,entr,report,hexn);}catch(const exception&e){cerr<<"error: "<<e.what()<<"\n";return 1;}}

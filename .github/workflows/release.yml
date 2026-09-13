@@ -1,63 +1,38 @@
-name: Release v1.2
+name: Release v2
 on:
   push:
-    tags:
-      - v1.2.0
+    tags: ["v2.0.0"]
   workflow_dispatch:
 permissions:
   contents: write
 jobs:
-  prepare:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Prepare installers
-        run: |
-          cp packaging/Windows.bat Windows.bat
-          cp packaging/MacOS MacOS.
-          cp packaging/Linux Linux.
-          chmod +x MacOS. Linux.
-      - name: Publish installers
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v1.2.0
-          name: Digital Archaeologist v1.2.0
-          prerelease: true
-          generate_release_notes: true
-          files: |
-            Windows.bat
-            MacOS.
-            Linux.
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
   build:
-    needs: prepare
     strategy:
       matrix:
         include:
           - os: windows-latest
             asset: archaeologist-windows.exe
+            path: build/Release/archaeologist.exe
           - os: ubuntu-latest
             asset: archaeologist-linux
+            path: build/archaeologist
           - os: macos-latest
             asset: archaeologist-macos
+            path: build/archaeologist
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-      - name: Build
-        run: cmake --build build --config Release --parallel
+      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build build --parallel
+      - run: ctest --test-dir build --output-on-failure
       - name: Package
         shell: bash
-        run: |
-          if [ "${{ runner.os }}" = "Windows" ]; then cp build/Release/archaeologist.exe "${{ matrix.asset }}"; else cp build/archaeologist "${{ matrix.asset }}"; fi
-      - name: Publish binary
+        run: cp "${{ matrix.path }}" "${{ matrix.asset }}"
+      - name: Upload release asset
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.2.0
-          prerelease: true
+          tag_name: v2.0.0
+          name: Digital Archaeologist v2.0.0
+          prerelease: false
+          generate_release_notes: true
           files: ${{ matrix.asset }}
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-
