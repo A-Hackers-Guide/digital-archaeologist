@@ -1,5 +1,8 @@
 # Digital Archaeologist v2
 
+[![Download Digital-Archaeologist](https://img.shields.io/sourceforge/dt/digi-archaeologist.svg?label=SourceForge%20downloads)](https://sourceforge.net/projects/digi-archaeologist/files/latest/download) [![Download Digital-Archaeologist](https://a.fsdn.com/con/app/sf-download-button)](https://sourceforge.net/projects/digi-archaeologist/files/latest/download)
+
+
 Digital Archaeologist is an extension-independent binary archaeology toolkit for files, disk images, archives, firmware blobs, databases, executables, and unknown data.
 
 ## Highlights
