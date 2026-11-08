@@ -18,13 +18,17 @@
 
 #include "analyzer.hpp"
 #include "base64.hpp"
+#include "carve.hpp"
+#include "crc32.hpp"
 #include "hashing.hpp"
+#include "strings_ex.hpp"
+#include "timeline.hpp"
 
 namespace fs = std::filesystem;
 
 namespace {
 
-constexpr const char* kVersion = "2.1.0";
+constexpr const char* kVersion = "2.2.0";
 
 void print_version() {
   std::cout << "Digital Archaeologist v" << kVersion << "\n";
@@ -72,11 +76,17 @@ void print_help(const std::string& topic = "") {
          "Analysis toggles (implied by --json/--report; off otherwise):\n"
          "  --stats                Dominant byte, printable ratio\n"
          "  --hash                 SHA-256 (always computed; prints it)\n"
+         "  --crc32                Also compute the IEEE-802.3 CRC-32\n"
          "  --entropy              Shannon entropy class + value\n"
          "  --strings [N]          Printable strings of length >= N (default 4)\n"
+         "  --ascii-only           With --strings: skip UTF-16LE scan\n"
+         "  --utf16-only           With --strings: skip ASCII scan\n"
          "  --hex [N]              First N bytes as a canonical hexdump\n"
          "  --partitions           MBR/GPT partition-table evidence\n"
          "  --mime                 Print the best-guess MIME type and exit\n"
+         "  --timeline             Filesystem + format-embedded timestamps\n"
+         "  --carve OUTDIR         Carve embedded ZIP/GZIP/PNG/JPEG/PDF/...\n"
+         "                         into OUTDIR as <offset>.<ext> files\n"
          "\n"
          "Transport:\n"
          "  --base64-encode        Base64-encode the file to stdout\n"
@@ -103,15 +113,20 @@ struct Args {
   std::string report_path;
   std::string find_text;
   std::string find_hex;
+  std::string carve_dir;
   bool json = false;
   bool deep = false;
   bool stats = false;
   bool strings = false;
+  bool ascii_only = false;
+  bool utf16_only = false;
   bool hex = false;
   bool partitions = false;
   bool hash = false;
+  bool crc32 = false;
   bool entropy = false;
   bool mime_only = false;
+  bool timeline = false;
   bool base64_encode = false;
   bool base64_decode = false;
   bool quiet = false;
@@ -155,8 +170,17 @@ std::optional<Args> parse_args(int argc, char** argv) {
     }
     else if (x == "--partitions") a.partitions = true;
     else if (x == "--hash") a.hash = true;
+    else if (x == "--crc32") a.crc32 = true;
     else if (x == "--entropy") a.entropy = true;
     else if (x == "--mime") a.mime_only = true;
+    else if (x == "--timeline") a.timeline = true;
+    else if (x == "--ascii-only") a.ascii_only = true;
+    else if (x == "--utf16-only") a.utf16_only = true;
+    else if (x == "--carve") {
+      auto v = take_next(i, "--carve");
+      if (!v) return std::nullopt;
+      a.carve_dir = v;
+    }
     else if (x == "--report") {
       auto v = take_next(i, "--report");
       if (!v) return std::nullopt;
@@ -282,17 +306,36 @@ std::vector<unsigned char> hex_to_bytes(const std::string& s) {
   return out;
 }
 
-void emit_strings(const std::vector<unsigned char>& d, std::size_t minlen) {
-  std::string cur;
-  for (unsigned char c : d) {
-    if (c == '\t' || (c >= 32 && c < 127)) {
-      cur.push_back(char(c));
-    } else {
-      if (cur.size() >= minlen) std::cout << cur << "\n";
-      cur.clear();
-    }
+void emit_strings(const std::vector<unsigned char>& d, std::size_t minlen,
+                  bool ascii, bool utf16le) {
+  auto s = da::extract_strings(d, minlen, ascii, utf16le);
+  for (const auto& f : s) {
+    std::cout << f.encoding << "@0x" << std::hex << f.offset << std::dec
+              << ": " << f.text << "\n";
   }
-  if (cur.size() >= minlen) std::cout << cur << "\n";
+}
+
+int do_carve(const Args& a) {
+  auto d = read_file_all(a.path, a.max_bytes);
+  auto carved = da::carve(d, a.carve_dir);
+  for (const auto& c : carved) {
+    std::cout << "carved " << c.format << " @0x" << std::hex << c.offset
+              << std::dec << " len=" << c.length << " -> " << c.out.string()
+              << "\n";
+  }
+  if (!a.quiet)
+    std::cout << carved.size() << " piece(s) written to " << a.carve_dir
+              << "\n";
+  return 0;
+}
+
+int do_timeline(const Args& a) {
+  auto d = read_file_all(a.path, a.max_bytes);
+  auto events = da::extract_timeline(a.path, d);
+  for (const auto& e : events) {
+    std::cout << e.source << "\t" << e.iso8601 << "\n";
+  }
+  return 0;
 }
 
 int do_scan(const Args& a) {
@@ -349,15 +392,29 @@ int do_analyze(const Args& a) {
     da::print_report_json(r);
   } else {
     da::print_report(r);
+    if (a.crc32) {
+      auto d = read_file_all(a.path, a.max_bytes);
+      char buf[12];
+      std::snprintf(buf, sizeof(buf), "%08x", da::crc32_bytes(d));
+      std::cout << "crc32: " << buf << "\n";
+    }
     if (a.stats) {
       std::cout << "dominant_byte: 0x" << std::hex << r.dominant_byte
                 << std::dec << " count=" << r.dominant_byte_count << "\n";
+    }
+    if (a.timeline) {
+      auto d = read_file_all(a.path, a.max_bytes);
+      std::cout << "--- timeline ---\n";
+      for (const auto& e : da::extract_timeline(a.path, d))
+        std::cout << e.source << "\t" << e.iso8601 << "\n";
     }
     if (a.hex || a.strings) {
       auto d = read_file_all(a.path, a.max_bytes);
       if (a.strings) {
         std::cout << "--- strings (min " << a.strings_minlen << ") ---\n";
-        emit_strings(d, a.strings_minlen);
+        bool ascii = !a.utf16_only;
+        bool utf = !a.ascii_only;
+        emit_strings(d, a.strings_minlen, ascii, utf);
       }
       if (a.hex) {
         std::cout << "--- hex (first " << a.hex_count << " bytes) ---\n";
@@ -409,9 +466,13 @@ int main(int argc, char** argv) {
   try {
     if (!a.scan_dir.empty()) return do_scan(a);
     if (a.path.empty()) { print_help(); return 2; }
+    if (!a.carve_dir.empty()) return do_carve(a);
     if (a.base64_encode || a.base64_decode) return do_base64(a);
     if (!a.find_text.empty() || !a.find_hex.empty()) return do_find(a);
     if (a.mime_only) return do_mime(a);
+    if (a.timeline && !a.json && !a.crc32 && !a.stats && !a.hex && !a.strings) {
+      return do_timeline(a);
+    }
     return do_analyze(a);
   } catch (const std::exception& e) {
     std::cerr << "error: " << e.what() << "\n";
