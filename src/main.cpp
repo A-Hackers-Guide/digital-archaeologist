@@ -1,52 +1,420 @@
+// Digital Archaeologist CLI entry point.
+//
+// This is a thin dispatcher that parses arguments and hands the real work
+// to the modules under include/*.hpp. The file is intentionally short and
+// readable; please keep it that way.
+
 #include <algorithm>
-#include <array>
-#include <cctype>
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
-#include <map>
-#include <sstream>
+#include <optional>
 #include <string>
 #include <vector>
-#include <cmath>
-#include <chrono>
-#include <ctime>
-#include <cstring>
-using namespace std;
-namespace fs=std::filesystem;
-static constexpr const char* VERSION="2.0.0";
-static uint32_t u32le(const vector<uint8_t>&d,size_t o){return o+4<=d.size()?uint32_t(d[o])|(uint32_t(d[o+1])<<8)|(uint32_t(d[o+2])<<16)|(uint32_t(d[o+3])<<24):0;}
-[[maybe_unused]] static uint64_t u64le(const vector<uint8_t>&d,size_t o){uint64_t v=0;for(int i=7;i>=0;--i)v=(v<<8)|((o+i<d.size())?d[o+i]:0);return v;}
-[[maybe_unused]] static uint16_t u16le(const vector<uint8_t>&d,size_t o){return o+2<=d.size()?uint16_t(d[o])|(uint16_t(d[o+1])<<8):0;}
-static string hexbytes(const vector<uint8_t>&d,size_t n=32){ostringstream s;s<<hex<<setfill('0');for(size_t i=0;i<min(n,d.size());++i)s<<setw(2)<<(int)d[i];return s.str();}
-static string sha256(const vector<uint8_t>& data){
- static const uint32_t K[64]={0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2};
- uint32_t h[8]={0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19};
- vector<uint8_t> m=data;m.push_back(0x80);while(m.size()%64!=56)m.push_back(0);uint64_t bits=uint64_t(data.size())*8;for(int i=7;i>=0;--i)m.push_back(uint8_t(bits>>(i*8)));
- auto R=[](uint32_t x,int n){return (x>>n)|(x<<(32-n));};
- for(size_t p=0;p<m.size();p+=64){uint32_t w[64]{};for(int i=0;i<16;i++)w[i]=(uint32_t(m[p+i*4])<<24)|(uint32_t(m[p+i*4+1])<<16)|(uint32_t(m[p+i*4+2])<<8)|m[p+i*4+3];for(int i=16;i<64;i++){uint32_t a=R(w[i-15],7)^R(w[i-15],18)^(w[i-15]>>3),b=R(w[i-2],17)^R(w[i-2],19)^(w[i-2]>>10);w[i]=w[i-16]+a+w[i-7]+b;}uint32_t a=h[0],b=h[1],c=h[2],d=h[3],e=h[4],f=h[5],g=h[6],q=h[7];for(int i=0;i<64;i++){uint32_t S1=R(e,6)^R(e,11)^R(e,25),ch=(e&f)^((~e)&g),t1=q+S1+ch+K[i]+w[i],S0=R(a,2)^R(a,13)^R(a,22),maj=(a&b)^(a&c)^(b&c),t2=S0+maj;q=g;g=f;f=e;e=d+t1;d=c;c=b;b=a;a=t1+t2;}h[0]+=a;h[1]+=b;h[2]+=c;h[3]+=d;h[4]+=e;h[5]+=f;h[6]+=g;h[7]+=q;}
- ostringstream s;s<<hex<<setfill('0');for(auto x:h)s<<setw(8)<<x;return s.str();}
-static string b64(const vector<uint8_t>&d){static const char*t="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";string s;for(size_t i=0;i<d.size();i+=3){uint32_t v=uint32_t(d[i])<<16;if(i+1<d.size())v|=uint32_t(d[i+1])<<8;if(i+2<d.size())v|=d[i+2];s+=t[(v>>18)&63];s+=t[(v>>12)&63];s+=i+1<d.size()?t[(v>>6)&63]:'=';s+=i+2<d.size()?t[v&63]:'=';}return s;}
-static bool has(const vector<uint8_t>&d,initializer_list<int>x,size_t o=0){size_t i=o;for(int c:x){if(i>=d.size()||d[i++]!=uint8_t(c))return false;}return true;}
-static string detect(const vector<uint8_t>&d){
- if(has(d,{0x7f,'E','L','F'}))return "ELF executable/object"; if(has(d,{'M','Z'}))return "PE/Windows executable"; if(has(d,{'%','P','D','F','-'}))return "PDF document";
- if(has(d,{'P','K',3,4})||has(d,{'P','K',5,6})||has(d,{'P','K',7,8}))return "ZIP archive/container"; if(has(d,{0x1f,0x8b}))return "GZIP compressed data"; if(has(d,{'B','Z','h'}))return "BZIP2 compressed data"; if(has(d,{0xfd,'7','z','X','Z',0x00}))return "XZ compressed data"; if(has(d,{'7','z',0xbc,0xaf,0x27,0x1c}))return "7-Zip archive";
- if(has(d,{'R','a','r','!',0x1a,0x07}))return "RAR archive"; if(has(d,{'\x89','P','N','G'}))return "PNG image"; if(has(d,{'G','I','F','8'}))return "GIF image"; if(has(d,{'B','M'}))return "BMP image"; if(has(d,{0xff,0xd8,0xff}))return "JPEG image";
- if(has(d,{'I','D','3'})||has(d,{0xff,0xfb}))return "MP3 audio"; if(has(d,{'R','I','F','F'})&&d.size()>12&&has(d,{'W','A','V','E'},8))return "WAV audio";
- if(has(d,{'S','Q','L','i','t','e',' ','f','o','r','m','a','t',' ','3','\0'}))return "SQLite database"; if(has(d,{'u','s','t','a','r'},257))return "TAR archive"; if(has(d,{'C','D','0','0','1'},1)||has(d,{'C','D','0','0','2'},1))return "ISO 9660 filesystem";
- if(has(d,{'H','+','H'})||has(d,{'H','X'})||has(d,{'B','D','S','D',' ',' ',' '}))return "Apple/Unix filesystem signature";
- size_t printable=0;for(auto c:d)if(c==9||c==10||c==13||(c>=32&&c<127))printable++;if(!d.empty()&&double(printable)/d.size()>.97)return "Plain text / structured text";return "Unknown binary format";}
-static double entropy(const vector<uint8_t>&d){if(d.empty())return 0;array<uint64_t,256> c{};for(auto x:d)c[x]++;double e=0;for(auto n:c)if(n)e-=double(n)/d.size()*log2(double(n)/d.size());return e;}
-static vector<string> strings(const vector<uint8_t>&d,size_t minlen=4,size_t maxout=100){vector<string>o;string s;for(auto c:d){if(c>=32&&c<127){s.push_back(char(c));}else{if(s.size()>=minlen)o.push_back(s);s.clear();if(o.size()>=maxout)break;}}if(s.size()>=minlen&&o.size()<maxout)o.push_back(s);return o;}
-static void hexdump(const vector<uint8_t>&d,size_t n=256){for(size_t i=0;i<min(n,d.size());i+=16){cout<<hex<<setw(8)<<setfill('0')<<i<<"  ";for(size_t j=0;j<16;j++)cout<<(i+j<d.size()?setw(2):setw(2))<<(i+j<d.size()?int(d[i+j]):0)<<' ';cout<<" |";for(size_t j=0;j<16&&i+j<d.size();j++){char c=char(d[i+j]);cout<<(c>=32&&c<127?c:'.');}cout<<"|\n";}cout<<dec;}
-static void partitions(const vector<uint8_t>&d){if(d.size()>=512&&d[510]==0x55&&d[511]==0xaa){cout<<"partition.scheme=MBR\n";for(int i=0;i<4;i++){size_t o=446+i*16;cout<<"partition."<<i+1<<" type=0x"<<hex<<int(d[o+4])<<dec<<" lba="<<u32le(d,o+8)<<" sectors="<<u32le(d,o+12)<<"\n";}}if(d.size()>=520&&string((char*)&d[512],(char*)&d[520])=="EFI PART")cout<<"partition.scheme=GPT\n";}
-static vector<uint8_t> readfile(const string&p){ifstream f(p,ios::binary);if(!f)throw runtime_error("cannot open input: "+p);f.seekg(0,ios::end);auto n=f.tellg();if(n<0)throw runtime_error("cannot stat input");f.seekg(0);vector<uint8_t> d; d.resize(static_cast<size_t>(n));if(n)f.read((char*)d.data(),n);return d;}
-static void help(const string&topic=""){if(topic=="unknown"){cout<<"UNKNOWN-FORMAT RESEARCH\nAnalyzes signatures, entropy, strings, structure, partitions and evidence.\nUse: archaeologist --unknown=windows|macos|linux file\n";return;}if(topic=="password"){cout<<"AUTHORIZED RECOVERY\nInspects encryption/protection metadata and accepts known credentials. No bypass or unrestricted cracking.\n";return;}cout<<"Digital Archaeologist v"<<VERSION<<" — forensic file archaeology\n\nUsage: archaeologist [options] <file>\n\nCore: --json --report FILE --scan DIR --deep --quiet --unknown[=OS]\nAnalysis: --stats --hash --entropy --strings [N] --hex [N] --partitions --mime --timeline\nTransport: --base64-encode --base64-decode\nSearch/carving: --find TEXT --find-hex HEX --carve OUTDIR\nMeta: --version --help [unknown|password|features]\n\nFeatures: extension-independent detection, containers, partitions, entropy, SHA-256, CRC32-ready analysis, strings, hexdumps, recursive scans, JSON reports, evidence scoring, timestamps, MIME hints, Base64 transport, signature carving, architecture detection, text classification, safety-limited research mode.\n";}
-static string mime(const string&t){if(t.find("PDF")!=string::npos)return "application/pdf";if(t.find("ZIP")!=string::npos)return "application/zip";if(t.find("PNG")!=string::npos)return "image/png";if(t.find("JPEG")!=string::npos)return "image/jpeg";if(t.find("ELF")!=string::npos)return "application/x-elf";if(t.find("PE/")!=string::npos)return "application/vnd.microsoft.portable-executable";if(t.find("SQLite")!=string::npos)return "application/vnd.sqlite3";if(t.find("text")!=string::npos)return "text/plain";return "application/octet-stream";}
-static int analyze(const string&p,bool json=false,bool deep=false,bool showstats=false,bool showstrings=false,bool showhex=false,bool showpart=false,bool showhash=false,bool showentropy=false,const string&report="",size_t hexn=256){auto d=readfile(p);auto t=detect(d);double e=entropy(d);size_t printable=0;for(auto c:d)if(c==9||c==10||c==13||(c>=32&&c<127))printable++;double conf=(t!="Unknown binary format"?95.0:25.0);if(e>7.5&&t=="Unknown binary format")conf=55; if(json){cout<<"{\n  \"path\":\""<<p<<"\",\n  \"size\":"<<d.size()<<",\n  \"format\":\""<<t<<"\",\n  \"confidence\":"<<conf<<",\n  \"entropy\":"<<fixed<<setprecision(4)<<e<<",\n  \"printable_ratio\":"<<double(printable)/max<size_t>(1,d.size())<<",\n  \"sha256\":\""<<sha256(d)<<"\",\n  \"mime\":\""<<mime(t)<<"\",\n  \"magic\":\""<<hexbytes(d)<<"\"\n}\n";return 0;}cout<<"=== DIGITAL ARCHAEOLOGIST ===\nfile: "<<p<<"\nsize: "<<d.size()<<" bytes\nformat: "<<t<<"\nconfidence: "<<conf<<"%"<<(conf==100?" — COMPLETE ANSWER FOUND":"")<<"\nmime: "<<mime(t)<<"\nmagic: "<<hexbytes(d)<<"\nentropy: "<<fixed<<setprecision(4)<<e<<" / 8\nprintable ratio: "<<double(printable)/max<size_t>(1,d.size())<<"\n";if(showhash)cout<<"sha256: "<<sha256(d)<<"\n";if(showstats){array<uint64_t,256>c{};for(auto x:d)c[x]++;auto mx=max_element(c.begin(),c.end());cout<<"dominant byte: 0x"<<hex<<distance(c.begin(),mx)<<dec<<" count="<<*mx<<"\n";}if(showpart)partitions(d);if(showstrings){cout<<"--- strings ---\n";for(auto&s:strings(d))cout<<s<<'\n';}if(showhex){cout<<"--- hex ---\n";hexdump(d,hexn);}if(deep&&t=="Unknown binary format")cout<<"research: no recognized container; preserving evidence and reporting unresolved structure\n";if(showentropy)cout<<"entropy.class: "<<(e<3?"low/repetitive":e<6?"mixed":e<7.5?"high": "very high / compressed-or-encrypted-like")<<"\n";if(!report.empty()){ofstream r(report);r<<"Digital Archaeologist report\nfile="<<p<<"\nsize="<<d.size()<<"\nformat="<<t<<"\nconfidence="<<conf<<"\nentropy="<<e<<"\nsha256="<<sha256(d)<<"\nmime="<<mime(t)<<"\nmagic="<<hexbytes(d,64)<<"\n";cout<<"report: "<<report<<"\n";}return 0;}
-int main(int argc,char**argv){try{if(argc<2){help();return 2;}string a=argv[1];if(a=="--version"){cout<<VERSION<<"\n";return 0;}if(a=="--help"||a=="-h"){if(argc>2)help(argv[2]);else help();return 0;}if(a=="--help-unknown") {help("unknown");return 0;}bool json=false,deep=false,stats=false,stringsf=false,hexf=false,parts=false,hash=false,entr=false;string report,findtext,findhex;size_t hexn=256;string path;bool b64e=false,b64d=false,scan=false;string scanpath,carve;
- for(int i=1;i<argc;i++){string x=argv[i];if(x=="--json")json=true;else if(x=="--deep")deep=true;else if(x=="--stats")stats=true;else if(x=="--strings")stringsf=true;else if(x=="--hex"){hexf=true;if(i+1<argc&&isdigit((unsigned char)argv[i+1][0]))hexn=stoull(argv[++i]);}else if(x=="--partitions")parts=true;else if(x=="--hash")hash=true;else if(x=="--entropy")entr=true;else if(x=="--report"&&i+1<argc)report=argv[++i];else if(x=="--find"&&i+1<argc)findtext=argv[++i];else if(x=="--find-hex"&&i+1<argc)findhex=argv[++i];else if(x=="--base64-encode")b64e=true;else if(x=="--base64-decode")b64d=true;else if(x=="--scan"&&i+1<argc){scan=true;scanpath=argv[++i];}else if(x=="--carve"&&i+1<argc)carve=argv[++i];else if(x.rfind("--",0)==0){if(x.rfind("--unknown",0)==0)deep=true;else if(x=="--mime"||x=="--timeline")stats=true;else if(x=="--quiet"){ }else continue;}else if(i==argc-1)path=x;}
- if(scan){for(auto&en:fs::recursive_directory_iterator(scanpath))if(en.is_regular_file()){try{auto d=readfile(en.path().string());cout<<en.path().string()<<"\t"<<detect(d)<<"\t"<<d.size()<<"\t"<<sha256(d)<<"\n";}catch(...){} }return 0;}
- if(path.empty()){help();return 2;}auto d=readfile(path);if(b64e){cout<<b64(d)<<"\n";return 0;}if(b64d){static const string A="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";string in((char*)d.data(),d.size()),out;int val=0,bits=-8;for(unsigned char c:in){if(c=='=')break;auto q=A.find(c);if(q==string::npos)continue;val=(val<<6)|int(q);bits+=6;if(bits>=0){out.push_back(char((val>>bits)&255));bits-=8;}}cout<<out;return 0;}if(!findtext.empty()){string s((char*)d.data(),d.size());auto pos=s.find(findtext);cout<<(pos==string::npos?"NOT FOUND":"FOUND at offset "+to_string(pos))<<"\n";return pos==string::npos?1:0;}if(!findhex.empty()){string h=hexbytes(d,d.size());transform(h.begin(),h.end(),h.begin(),::tolower);string q=findhex;transform(q.begin(),q.end(),q.begin(),::tolower);auto pos=h.find(q);cout<<(pos==string::npos?"NOT FOUND":"FOUND at byte offset "+to_string(pos/2))<<"\n";return pos==string::npos?1:0;}return analyze(path,json,deep,stats,stringsf,hexf,parts,hash,entr,report,hexn);}catch(const exception&e){cerr<<"error: "<<e.what()<<"\n";return 1;}}
+
+#include "analyzer.hpp"
+#include "base64.hpp"
+#include "hashing.hpp"
+
+namespace fs = std::filesystem;
+
+namespace {
+
+constexpr const char* kVersion = "2.1.0";
+
+void print_version() {
+  std::cout << "Digital Archaeologist v" << kVersion << "\n";
+}
+
+void print_help(const std::string& topic = "") {
+  if (topic == "unknown") {
+    std::cout
+        << "UNKNOWN-FORMAT RESEARCH MODE\n"
+           "Runs every analysis pass (signatures, entropy, strings, partition\n"
+           "evidence) and keeps going even when no signature matches. Use when\n"
+           "you don't know what you're looking at and want everything on the\n"
+           "table at once.\n"
+           "\n"
+           "  archaeologist --unknown[=windows|macos|linux] <file>\n";
+    return;
+  }
+  if (topic == "password") {
+    std::cout
+        << "AUTHORIZED RECOVERY\n"
+           "Digital Archaeologist is read-only. It inspects encryption or\n"
+           "protection metadata and accepts user-supplied credentials where\n"
+           "applicable. It does not bypass, crack, or attack protection\n"
+           "schemes.\n";
+    return;
+  }
+  if (topic == "features") {
+    std::cout << "See docs/FEATURES.md for the full, numbered feature list.\n";
+    return;
+  }
+  std::cout
+      << "Digital Archaeologist v" << kVersion
+      << " — forensic file archaeology\n\n"
+         "Usage:\n"
+         "  archaeologist [options] <file>\n"
+         "\n"
+         "Core:\n"
+         "  --json                 Emit a single JSON object instead of text\n"
+         "  --report FILE          Also write a plain-text report to FILE\n"
+         "  --scan DIR             Recursively inventory files under DIR\n"
+         "  --deep                 Run every analysis pass regardless of match\n"
+         "  --unknown[=OS]         Alias of --deep with OS-specific hints\n"
+         "  --quiet                Suppress informational output\n"
+         "\n"
+         "Analysis toggles (implied by --json/--report; off otherwise):\n"
+         "  --stats                Dominant byte, printable ratio\n"
+         "  --hash                 SHA-256 (always computed; prints it)\n"
+         "  --entropy              Shannon entropy class + value\n"
+         "  --strings [N]          Printable strings of length >= N (default 4)\n"
+         "  --hex [N]              First N bytes as a canonical hexdump\n"
+         "  --partitions           MBR/GPT partition-table evidence\n"
+         "  --mime                 Print the best-guess MIME type and exit\n"
+         "\n"
+         "Transport:\n"
+         "  --base64-encode        Base64-encode the file to stdout\n"
+         "  --base64-decode        Base64-decode stdin-or-file to stdout\n"
+         "\n"
+         "Search:\n"
+         "  --find TEXT            Find ASCII substring; prints all offsets\n"
+         "  --find-hex HEX         Find raw byte pattern; prints all offsets\n"
+         "\n"
+         "Safety:\n"
+         "  --max-size BYTES       Cap in-memory structural analysis\n"
+         "                         (default 2 GiB; SHA-256 always streams the\n"
+         "                         whole file)\n"
+         "\n"
+         "Meta:\n"
+         "  --version              Print version and exit\n"
+         "  --help [topic]         Print help. Topics: unknown, password,\n"
+         "                         features\n";
+}
+
+struct Args {
+  std::string path;
+  std::string scan_dir;
+  std::string report_path;
+  std::string find_text;
+  std::string find_hex;
+  bool json = false;
+  bool deep = false;
+  bool stats = false;
+  bool strings = false;
+  bool hex = false;
+  bool partitions = false;
+  bool hash = false;
+  bool entropy = false;
+  bool mime_only = false;
+  bool base64_encode = false;
+  bool base64_decode = false;
+  bool quiet = false;
+  std::size_t hex_count = 256;
+  std::size_t strings_minlen = 4;
+  std::uintmax_t max_bytes = std::uintmax_t(2) * 1024 * 1024 * 1024;
+};
+
+bool parse_size(const std::string& s, std::uintmax_t& out) {
+  char* end = nullptr;
+  std::uintmax_t v = std::strtoull(s.c_str(), &end, 10);
+  if (!end || *end != 0) return false;
+  out = v;
+  return true;
+}
+
+std::optional<Args> parse_args(int argc, char** argv) {
+  Args a;
+  auto take_next = [&](int& i, const char* flag) -> const char* {
+    if (i + 1 >= argc) {
+      std::cerr << "error: " << flag << " requires an argument\n";
+      return nullptr;
+    }
+    return argv[++i];
+  };
+  for (int i = 1; i < argc; ++i) {
+    std::string x = argv[i];
+    if (x == "--json") a.json = true;
+    else if (x == "--deep") a.deep = true;
+    else if (x.rfind("--unknown", 0) == 0) a.deep = true;
+    else if (x == "--stats") a.stats = true;
+    else if (x == "--strings") {
+      a.strings = true;
+      if (i + 1 < argc && std::isdigit((unsigned char)argv[i + 1][0]))
+        a.strings_minlen = std::stoul(argv[++i]);
+    }
+    else if (x == "--hex") {
+      a.hex = true;
+      if (i + 1 < argc && std::isdigit((unsigned char)argv[i + 1][0]))
+        a.hex_count = std::stoul(argv[++i]);
+    }
+    else if (x == "--partitions") a.partitions = true;
+    else if (x == "--hash") a.hash = true;
+    else if (x == "--entropy") a.entropy = true;
+    else if (x == "--mime") a.mime_only = true;
+    else if (x == "--report") {
+      auto v = take_next(i, "--report");
+      if (!v) return std::nullopt;
+      a.report_path = v;
+    }
+    else if (x == "--find") {
+      auto v = take_next(i, "--find");
+      if (!v) return std::nullopt;
+      a.find_text = v;
+    }
+    else if (x == "--find-hex") {
+      auto v = take_next(i, "--find-hex");
+      if (!v) return std::nullopt;
+      a.find_hex = v;
+    }
+    else if (x == "--base64-encode") a.base64_encode = true;
+    else if (x == "--base64-decode") a.base64_decode = true;
+    else if (x == "--scan") {
+      auto v = take_next(i, "--scan");
+      if (!v) return std::nullopt;
+      a.scan_dir = v;
+    }
+    else if (x == "--quiet") a.quiet = true;
+    else if (x == "--max-size") {
+      auto v = take_next(i, "--max-size");
+      if (!v) return std::nullopt;
+      if (!parse_size(v, a.max_bytes)) {
+        std::cerr << "error: --max-size takes a decimal byte count\n";
+        return std::nullopt;
+      }
+    }
+    else if (x == "--version") { print_version(); std::exit(0); }
+    else if (x == "--help" || x == "-h") {
+      print_help(i + 1 < argc ? argv[i + 1] : "");
+      std::exit(0);
+    }
+    else if (!x.empty() && x[0] == '-') {
+      // Unknown flag — warn but keep going; back-compat with the older build.
+      std::cerr << "warning: unknown flag ignored: " << x << "\n";
+    }
+    else {
+      a.path = x;
+    }
+  }
+  return a;
+}
+
+std::vector<unsigned char> read_file_all(const std::string& p,
+                                         std::uintmax_t cap) {
+  std::ifstream f(p, std::ios::binary);
+  if (!f) throw std::runtime_error("cannot open input: " + p);
+  f.seekg(0, std::ios::end);
+  auto sz = f.tellg();
+  f.seekg(0);
+  if (sz < 0) throw std::runtime_error("cannot stat input: " + p);
+  std::uintmax_t n = static_cast<std::uintmax_t>(sz);
+  if (n > cap) n = cap;
+  std::vector<unsigned char> d(static_cast<std::size_t>(n));
+  if (n) f.read(reinterpret_cast<char*>(d.data()),
+                static_cast<std::streamsize>(n));
+  return d;
+}
+
+void hexdump(const std::vector<unsigned char>& d, std::size_t n) {
+  std::size_t limit = std::min(n, d.size());
+  std::ios_base::fmtflags saved = std::cout.flags();
+  for (std::size_t i = 0; i < limit; i += 16) {
+    std::cout << std::hex << std::setw(8) << std::setfill('0') << i << "  ";
+    for (std::size_t j = 0; j < 16; ++j) {
+      if (i + j < limit) {
+        std::cout << std::setw(2) << std::setfill('0')
+                  << int(d[i + j]) << ' ';
+      } else {
+        std::cout << "   ";
+      }
+    }
+    std::cout << " |";
+    for (std::size_t j = 0; j < 16 && i + j < limit; ++j) {
+      char c = char(d[i + j]);
+      std::cout << ((c >= 32 && c < 127) ? c : '.');
+    }
+    std::cout << "|\n";
+  }
+  std::cout.flags(saved);
+}
+
+std::vector<std::size_t> find_substring(const std::vector<unsigned char>& d,
+                                        const std::string& needle) {
+  std::vector<std::size_t> hits;
+  if (needle.empty() || d.size() < needle.size()) return hits;
+  const unsigned char* begin = d.data();
+  const unsigned char* end = d.data() + d.size();
+  const unsigned char* n = reinterpret_cast<const unsigned char*>(needle.data());
+  std::size_t nlen = needle.size();
+  const unsigned char* p = begin;
+  while (true) {
+    auto it = std::search(p, end, n, n + nlen);
+    if (it == end) break;
+    hits.push_back(std::size_t(it - begin));
+    p = it + 1;
+  }
+  return hits;
+}
+
+std::vector<unsigned char> hex_to_bytes(const std::string& s) {
+  std::string clean;
+  clean.reserve(s.size());
+  for (char c : s) if (!std::isspace((unsigned char)c)) clean += c;
+  if (clean.size() % 2) throw std::runtime_error("odd-length hex pattern");
+  std::vector<unsigned char> out;
+  out.reserve(clean.size() / 2);
+  auto nib = [](char c) -> int {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+  };
+  for (std::size_t i = 0; i < clean.size(); i += 2) {
+    int hi = nib(clean[i]), lo = nib(clean[i + 1]);
+    if (hi < 0 || lo < 0) throw std::runtime_error("non-hex digit in pattern");
+    out.push_back((unsigned char)((hi << 4) | lo));
+  }
+  return out;
+}
+
+void emit_strings(const std::vector<unsigned char>& d, std::size_t minlen) {
+  std::string cur;
+  for (unsigned char c : d) {
+    if (c == '\t' || (c >= 32 && c < 127)) {
+      cur.push_back(char(c));
+    } else {
+      if (cur.size() >= minlen) std::cout << cur << "\n";
+      cur.clear();
+    }
+  }
+  if (cur.size() >= minlen) std::cout << cur << "\n";
+}
+
+int do_scan(const Args& a) {
+  std::error_code ec;
+  for (fs::recursive_directory_iterator it(a.scan_dir, ec), end; it != end;
+       it.increment(ec)) {
+    if (ec) {
+      std::cerr << "scan: " << ec.message() << "\n";
+      ec.clear();
+      continue;
+    }
+    if (!it->is_regular_file(ec) || ec) { ec.clear(); continue; }
+    try {
+      auto r = da::analyze(it->path(), {a.max_bytes});
+      std::cout << it->path().string() << "\t"
+                << (r.detections.empty() ? std::string("unknown")
+                                         : r.detections.front().format)
+                << "\t" << r.size << "\t" << r.sha256 << "\n";
+    } catch (const std::exception& e) {
+      std::cerr << "scan: " << it->path().string() << ": " << e.what() << "\n";
+    }
+  }
+  return 0;
+}
+
+int do_mime(const Args& a) {
+  auto r = da::analyze(a.path, {a.max_bytes});
+  std::cout << (r.detections.empty() || r.detections.front().mime.empty()
+                    ? std::string("application/octet-stream")
+                    : r.detections.front().mime)
+            << "\n";
+  return 0;
+}
+
+int do_find(const Args& a) {
+  auto d = read_file_all(a.path, a.max_bytes);
+  std::vector<std::size_t> hits;
+  if (!a.find_text.empty()) {
+    hits = find_substring(d, a.find_text);
+  } else {
+    auto bytes = hex_to_bytes(a.find_hex);
+    hits = find_substring(d, std::string(bytes.begin(), bytes.end()));
+  }
+  if (hits.empty()) { std::cout << "NOT FOUND\n"; return 1; }
+  for (auto h : hits)
+    std::cout << "FOUND at offset " << h << " (0x" << std::hex << h << std::dec
+              << ")\n";
+  return 0;
+}
+
+int do_analyze(const Args& a) {
+  auto r = da::analyze(a.path, {a.max_bytes});
+  if (a.json) {
+    da::print_report_json(r);
+  } else {
+    da::print_report(r);
+    if (a.stats) {
+      std::cout << "dominant_byte: 0x" << std::hex << r.dominant_byte
+                << std::dec << " count=" << r.dominant_byte_count << "\n";
+    }
+    if (a.hex || a.strings) {
+      auto d = read_file_all(a.path, a.max_bytes);
+      if (a.strings) {
+        std::cout << "--- strings (min " << a.strings_minlen << ") ---\n";
+        emit_strings(d, a.strings_minlen);
+      }
+      if (a.hex) {
+        std::cout << "--- hex (first " << a.hex_count << " bytes) ---\n";
+        hexdump(d, a.hex_count);
+      }
+    }
+  }
+  if (!a.report_path.empty()) {
+    std::ofstream o(a.report_path);
+    o << "Digital Archaeologist report v" << kVersion << "\n"
+      << "file=" << a.path << "\n"
+      << "size=" << r.size << "\n"
+      << "sha256=" << r.sha256 << "\n"
+      << "entropy=" << r.entropy << "\n"
+      << "detections=" << r.detections.size() << "\n";
+    for (const auto& det : r.detections) {
+      o << "detection\t" << det.category << "\t" << det.format << "\t"
+        << det.confidence << "\t" << det.mime << "\n";
+    }
+    if (!a.quiet) std::cout << "report written: " << a.report_path << "\n";
+  }
+  return 0;
+}
+
+int do_base64(const Args& a) {
+  if (a.base64_encode) {
+    auto d = read_file_all(a.path, a.max_bytes);
+    std::cout << da::base64_encode(d) << "\n";
+    return 0;
+  }
+  // decode
+  std::ifstream f(a.path, std::ios::binary);
+  if (!f) { std::cerr << "cannot open " << a.path << "\n"; return 1; }
+  std::string text((std::istreambuf_iterator<char>(f)),
+                   std::istreambuf_iterator<char>());
+  auto bytes = da::base64_decode(text);
+  std::cout.write(reinterpret_cast<const char*>(bytes.data()),
+                  std::streamsize(bytes.size()));
+  return 0;
+}
+
+}  // namespace
+
+int main(int argc, char** argv) {
+  if (argc < 2) { print_help(); return 2; }
+  auto maybe = parse_args(argc, argv);
+  if (!maybe) return 2;
+  Args a = *maybe;
+  try {
+    if (!a.scan_dir.empty()) return do_scan(a);
+    if (a.path.empty()) { print_help(); return 2; }
+    if (a.base64_encode || a.base64_decode) return do_base64(a);
+    if (!a.find_text.empty() || !a.find_hex.empty()) return do_find(a);
+    if (a.mime_only) return do_mime(a);
+    return do_analyze(a);
+  } catch (const std::exception& e) {
+    std::cerr << "error: " << e.what() << "\n";
+    return 1;
+  }
+}
