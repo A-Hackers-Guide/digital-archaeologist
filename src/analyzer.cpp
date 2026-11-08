@@ -1002,8 +1002,11 @@ void detect_signatures(const Bytes& d, std::vector<Detection>& out) {
   }
 
   // Package / app installers
-  if (starts_with(d, {0x50, 0x4b, 0x03, 0x04}) && d.size() >= 0x24 &&
-      // AppX / MSIX: ZIP + specific inner [Content_Types].xml
+  //
+  // OOXML / AppX / MSIX / EPUB — detectable by a ZIP whose first local-file
+  // entry is "[Content_Types].xml" (19 bytes starting at offset 30).
+  // Guard explicitly includes the 19 bytes of filename past offset 30.
+  if (starts_with(d, {0x50, 0x4b, 0x03, 0x04}) && d.size() >= 30 + 19 &&
       std::memcmp(d.data() + 30, "[Content_Types].xml", 19) == 0) {
     add(out, "package", "OOXML / AppX / MSIX / EPUB (ZIP + content types)",
         85, "application/zip",
