@@ -34,3 +34,9 @@ include(CTest)
 if(BUILD_TESTING)
   add_subdirectory(tests)
 endif()
+
+# --- Fuzz targets (opt-in: requires clang -fsanitize=fuzzer) ---
+option(DA_FUZZ "Build libFuzzer targets (needs clang)" OFF)
+if(DA_FUZZ)
+  add_subdirectory(fuzz)
+endif()

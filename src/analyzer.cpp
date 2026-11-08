@@ -577,19 +577,11 @@ std::string json_escape(const std::string& s) {
 
 }  // namespace
 
-Report analyze(const std::filesystem::path& path, AnalyzeOptions opt) {
-  Report r;
-  r.path = path;
-  std::error_code ec;
-  r.size = std::filesystem::file_size(path, ec);
-  if (ec) throw std::runtime_error("cannot stat input: " + path.string());
+namespace {
 
-  r.sha256 = sha256_file(path);  // always full-file stream
-
-  Bytes d = load_capped(path, opt.max_bytes, r.size, r.truncated);
+void populate_from_window(Report& r, const Bytes& d, std::uintmax_t cap) {
   r.bytes_scanned = d.size();
 
-  // Byte statistics + Shannon entropy over the loaded window.
   std::array<std::uint64_t, 256> cnt{};
   std::uint64_t printable = 0;
   for (unsigned char c : d) {
@@ -610,7 +602,6 @@ Report analyze(const std::filesystem::path& path, AnalyzeOptions opt) {
 
   detect_signatures(d, r.detections);
 
-  // Text fallback only when nothing else matched.
   if (r.detections.empty() && r.printable_ratio > 0.97) {
     add(r.detections, "text", "Plain / structured text", 85, "text/plain",
         {{"heuristic", "printable ratio > 0.97", 85}});
@@ -624,9 +615,42 @@ Report analyze(const std::filesystem::path& path, AnalyzeOptions opt) {
   }
   if (r.truncated) {
     r.notes.push_back("Structural analysis was capped at " +
-                      std::to_string(opt.max_bytes) +
+                      std::to_string(cap) +
                       " bytes; SHA-256 covers the whole file.");
   }
+}
+
+}  // namespace
+
+Report analyze_bytes(const std::string& synthetic_name,
+                     const std::vector<unsigned char>& data,
+                     AnalyzeOptions opt) {
+  Report r;
+  r.path = synthetic_name;
+  r.size = data.size();
+  r.sha256 = sha256_bytes(data);
+  Bytes window;
+  if (data.size() > opt.max_bytes) {
+    r.truncated = true;
+    window.assign(data.begin(), data.begin() + opt.max_bytes);
+  } else {
+    window = data;
+  }
+  populate_from_window(r, window, opt.max_bytes);
+  return r;
+}
+
+Report analyze(const std::filesystem::path& path, AnalyzeOptions opt) {
+  Report r;
+  r.path = path;
+  std::error_code ec;
+  r.size = std::filesystem::file_size(path, ec);
+  if (ec) throw std::runtime_error("cannot stat input: " + path.string());
+
+  r.sha256 = sha256_file(path);  // always full-file stream
+
+  Bytes d = load_capped(path, opt.max_bytes, r.size, r.truncated);
+  populate_from_window(r, d, opt.max_bytes);
   return r;
 }
 
