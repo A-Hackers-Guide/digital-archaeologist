@@ -26,6 +26,10 @@ add_executable(da_timeline_test timeline_test.cpp)
 target_link_libraries(da_timeline_test PRIVATE da_core)
 add_test(NAME timeline COMMAND da_timeline_test)
 
+add_executable(da_container_test container_test.cpp)
+target_link_libraries(da_container_test PRIVATE da_core)
+add_test(NAME container COMMAND da_container_test)
+
 # CLI smoke tests using the built binary
 add_test(NAME cli_help COMMAND archaeologist --help)
 add_test(NAME cli_version COMMAND archaeologist --version)
