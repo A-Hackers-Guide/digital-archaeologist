@@ -833,6 +833,92 @@ void detect_signatures(const Bytes& d, std::vector<Detection>& out) {
         {{"signature", "BDB magic (either endianness)", 85},
          {"note", "used by old Bitcoin wallet.dat and many legacy apps", 0}});
   }
+
+  // ======================================================================
+  //  Tier-H additions: another 15 formats
+  // ======================================================================
+
+  // 3D / content creation
+  if (d.size() >= 21 && starts_with_str(d, "Kaydara FBX Binary")) {
+    add(out, "3d-model", "Autodesk FBX binary", 100,
+        "application/octet-stream",
+        {{"signature", "Kaydara FBX Binary header", 100}});
+  }
+  if (starts_with_str(d, "BLENDER")) {
+    add(out, "3d-model", "Blender .blend", 100, "",
+        {{"signature", "BLENDER header", 100}});
+  }
+  if (starts_with(d, {'8', 'B', 'I', 'M'})) {
+    add(out, "data", "Photoshop image resource block (8BIM)", 90, "",
+        {{"signature", "8BIM header", 90}});
+  }
+
+  // Version-control and source-repo blobs
+  if (starts_with(d, {'P', 'A', 'C', 'K'}) && d.size() >= 12 &&
+      // Git packfile v2/v3 has version at offset 4
+      (d[7] == 2 || d[7] == 3)) {
+    add(out, "scm", "Git packfile (v2/v3)", 100, "",
+        {{"signature", "PACK header + version", 100}});
+  }
+  if (starts_with(d, {'D', 'I', 'R', 'C'})) {
+    add(out, "scm", "Git index (DIRC)", 100, "",
+        {{"signature", "DIRC header", 100}});
+  }
+  if (starts_with_str(d, "SVN-fs-dump-format-version:")) {
+    add(out, "scm", "Subversion dump", 100, "",
+        {{"signature", "SVN-fs-dump-format-version header", 100}});
+  }
+
+  // Compression (one more)
+  if (starts_with(d, {0x1f, 0x9d})) {
+    add(out, "container", "Unix compress (.Z)", 100, "application/x-compress",
+        {{"signature", "compress magic 1F 9D", 100}});
+  }
+
+  // Science / weather / HPC
+  if (starts_with_str(d, "GRIB")) {
+    add(out, "data", "WMO GRIB (gridded binary)", 100, "application/x-grib",
+        {{"signature", "GRIB header", 100}});
+  }
+  if (starts_with_str(d, "BUFR")) {
+    add(out, "data", "WMO BUFR (binary universal form)", 100,
+        "application/x-bufr",
+        {{"signature", "BUFR header", 100}});
+  }
+  if (starts_with_str(d, "RDX2\n") || starts_with_str(d, "RDX3\n")) {
+    add(out, "data", "R serialized data (.Rds)", 100,
+        "application/x-r-data",
+        {{"signature", "RDX2/RDX3 header", 100}});
+  }
+
+  // Android runtime (more)
+  if (starts_with(d, {'d', 'e', 'y', '\n'})) {
+    add(out, "bytecode", "Android ODEX (Optimized DEX, pre-ART)", 100, "",
+        {{"signature", "dey\\n header", 100}});
+  }
+
+  // Crash + memory
+  if (starts_with_str(d, "MDMP")) {
+    add(out, "memory-dump", "Windows mini-dump", 100,
+        "application/vnd.microsoft.mdmp",
+        {{"signature", "MDMP header", 100}});
+  }
+
+  // Storage
+  if (d.size() >= 520 && starts_with_str(d, "LABELONE", 512)) {
+    add(out, "filesystem", "LVM2 physical volume label", 100, "",
+        {{"signature", "LABELONE at offset 512", 100}});
+  }
+
+  // Containers / data layouts
+  if (starts_with(d, {'q', 'r', 'e', 's'})) {
+    add(out, "container", "Qt binary resource (qres)", 100, "",
+        {{"signature", "qres header", 100}});
+  }
+  if (starts_with_str(d, "OpenVDB")) {
+    add(out, "3d-model", "OpenVDB", 100, "",
+        {{"signature", "OpenVDB header", 100}});
+  }
 }
 
 void add_entropy_notes(Report& r) {
