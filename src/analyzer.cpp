@@ -706,6 +706,133 @@ void detect_signatures(const Bytes& d, std::vector<Detection>& out) {
         {{"signature", "mimetype entry at ZIP offset 30", 90}});
   }
 
+  // ======================================================================
+  //  Tier-G additions: another 25 formats
+  // ======================================================================
+
+  // Disk + VM images
+  if (starts_with_str(d, "vhdxfile")) {
+    add(out, "disk-image", "Microsoft VHDX", 100, "",
+        {{"signature", "vhdxfile header", 100}});
+  }
+
+  // Archives / compression
+  if (starts_with(d, {'7', 'k', 'S', 't', 0xa5, 0x2f, 0x8f})) {
+    add(out, "container", "zpaq", 100, "application/x-zpaq",
+        {{"signature", "zpaq header", 100}});
+  }
+
+  // Patches / diffs
+  if (starts_with_str(d, "BSDIFF40")) {
+    add(out, "patch", "bsdiff v4", 100, "",
+        {{"signature", "BSDIFF40 header", 100}});
+  }
+  if (starts_with(d, {'%', 'X', 'D', 'Z'})) {
+    add(out, "patch", "xdelta3 (VCDIFF)", 100, "",
+        {{"signature", "xdelta3 %XDZ header", 100}});
+  }
+
+  // Scientific data
+  if (starts_with(d, {'C', 'D', 'F', 0x01}) ||
+      starts_with(d, {'C', 'D', 'F', 0x02})) {
+    add(out, "data", "NetCDF classic", 100, "application/x-netcdf",
+        {{"signature", "CDF v1/v2 header", 100}});
+  }
+  if (starts_with(d, {0x0e, 0x03, 0x13, 0x01})) {
+    add(out, "data", "HDF4", 100, "",
+        {{"signature", "HDF4 header", 100}});
+  }
+  if (d.size() >= 128 &&
+      std::memcmp(d.data(), "MATLAB 5.0 MAT-file", 19) == 0) {
+    add(out, "data", "MATLAB MAT-file v5+", 100, "application/x-matlab",
+        {{"signature", "MATLAB 5.0 MAT-file header", 100}});
+  }
+
+  // Crypto / keys / secrets
+  if (starts_with_str(d, "age-encryption.org/v1\n")) {
+    add(out, "crypto", "age encrypted file", 100, "",
+        {{"signature", "age-encryption.org/v1 header", 100}});
+  }
+  if (starts_with_str(d, "PuTTY-User-Key-File-")) {
+    add(out, "key", "PuTTY SSH private key (PPK)", 100, "",
+        {{"signature", "PuTTY-User-Key-File header", 100}});
+  }
+
+  // Game ROMs / consoles
+  if (d.size() >= 0x10f && starts_with_str(d, "SEGA MEGA DRIVE", 0x100)) {
+    add(out, "game-rom", "Sega Mega Drive / Genesis ROM", 100, "",
+        {{"signature", "SEGA MEGA DRIVE title at 0x100", 100}});
+  }
+  if (d.size() >= 0x10f && starts_with_str(d, "SEGA GENESIS", 0x100)) {
+    add(out, "game-rom", "Sega Genesis ROM", 100, "",
+        {{"signature", "SEGA GENESIS title at 0x100", 100}});
+  }
+  if (d.size() >= 0x1f && starts_with_str(d, "SEGA SEGASATURN", 0x10)) {
+    add(out, "game-rom", "Sega Saturn disc", 100, "",
+        {{"signature", "SEGA SEGASATURN at offset 0x10", 100}});
+  }
+  if (d.size() >= 0x20 && starts_with(d, {0xc2, 0x33, 0x9f, 0x3d}, 0x1c)) {
+    add(out, "game-rom", "Nintendo GameCube disc image", 100, "",
+        {{"signature", "GameCube magic at 0x1c", 100}});
+  }
+  if (d.size() >= 0x1c && starts_with(d, {0x5d, 0x1c, 0x9e, 0xa3}, 0x18)) {
+    add(out, "game-rom", "Nintendo Wii disc image", 100, "",
+        {{"signature", "Wii magic at 0x18", 100}});
+  }
+  if (d.size() >= 0x14 && starts_with_str(d, "NRO0", 0x10)) {
+    add(out, "game-rom", "Nintendo Switch NRO homebrew", 100, "",
+        {{"signature", "NRO0 header at offset 0x10", 100}});
+  }
+  if (d.size() >= 0x14 && starts_with_str(d, "AEXI", 0x10)) {
+    // Some Switch dumps place AEXI (NSO3) further in; kept narrow.
+    add(out, "game-rom", "Nintendo Switch NSO/AEXI", 85, "",
+        {{"signature", "AEXI header at 0x10", 85}});
+  }
+
+  // Android runtime
+  if (starts_with(d, {'v', 'd', 'e', 'x'})) {
+    add(out, "bytecode", "Android VDEX (ART)", 100, "",
+        {{"signature", "vdex header", 100}});
+  }
+  if (starts_with(d, {'o', 'a', 't', '\n'})) {
+    add(out, "bytecode", "Android OAT (Optimized DEX)", 100, "",
+        {{"signature", "oat\\n header", 100}});
+  }
+  if (starts_with(d, {'a', 'r', 't', '\n'})) {
+    add(out, "bytecode", "Android ART image", 100, "",
+        {{"signature", "art\\n header", 100}});
+  }
+
+  // Modding / game data
+  if (starts_with_str(d, "ERF V1.0") || starts_with_str(d, "ERF V2.0") ||
+      starts_with_str(d, "MOD V1.0") || starts_with_str(d, "HAK V1.0")) {
+    add(out, "game-asset", "BioWare Aurora/NWN ERF resource", 100, "",
+        {{"signature", "ERF / MOD / HAK header", 100}});
+  }
+  if (starts_with(d, {0x55, 0xaa, 0x12, 0x34})) {
+    add(out, "game-asset", "Valve VPK", 95, "",
+        {{"signature", "VPK signature", 95}});
+  }
+
+  // Fonts (more)
+  if (starts_with(d, {0x01, 'f', 'c', 'p'})) {
+    add(out, "font", "PCF bitmap font", 100, "application/x-font-pcf",
+        {{"signature", "PCF header", 100}});
+  }
+  if (starts_with_str(d, "STARTFONT ")) {
+    add(out, "font", "BDF bitmap font", 100, "application/x-font-bdf",
+        {{"signature", "STARTFONT text header", 100}});
+  }
+
+  // DMG sparsebundle info plist is text, skipped; DMG body is at end.
+  //
+  // Bitcoin wallet.dat starts with a BDB (Berkeley DB) magic.
+  if (starts_with(d, {0x00, 0x05, 0x31, 0x62}) ||
+      starts_with(d, {0x62, 0x31, 0x05, 0x00})) {
+    add(out, "database", "Berkeley DB (BDB)", 85, "application/x-berkeley-db",
+        {{"signature", "BDB magic (either endianness)", 85},
+         {"note", "used by old Bitcoin wallet.dat and many legacy apps", 0}});
+  }
 }
 
 void add_entropy_notes(Report& r) {
