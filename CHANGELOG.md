@@ -4,6 +4,12 @@ All notable changes to Digital Archaeologist. Dates are UTC; versions follow [Se
 
 ## [Unreleased]
 
+### Added
+
+- **Container walk** (`da::list_container`): reads ZIP / TAR / GZIP indexes without decompressing. New `--list` CLI flag. 10 000-entry cap per listing with a `truncated` flag so a hostile archive can't DoS the walker.
+- **30+ new detection signatures**: SQLite WAL + rollback journal, Redis RDB, Lua bytecode, QEMU QED, VirtualBox VDI, N64 ROM, Switch NSP (PFS0) + XCI, Xbox XBE, Xbox 360 XEX2, PSX EXE, Bethesda ESM/ESP + BSA, SoundFont 2, DTS, AC-3, glTF, Apache Avro, Windows EVTX + crash dumps, Apple LZFSE, xar, ARJ, LHA, JPEG XR, Photoshop PSB, Fujifilm RAF, EDID monitor descriptors, IDA Pro database, Bitcoin mainnet blocks, VCDIFF, OpenDocument (ODT/ODS/ODP via ZIP inner mimetype).
+- **Benchmark suite** (`bench/`) behind `-DDA_BENCH=ON`. Three binaries for `analyze_bytes`, `sha256`, `carve`. Zero third-party deps. See [Benchmarks](docs/benchmarks.md).
+
 ## [2.2.0] — 2026-11-08
 
 ### Added
