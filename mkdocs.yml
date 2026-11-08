@@ -1,0 +1,58 @@
+site_name: Digital Archaeologist
+site_description: Read-only binary archaeology toolkit — identify, fingerprint, carve and timeline unknown files, disk images, firmware and archives.
+site_url: https://a-hackers-guide.github.io/digital-archaeologist/
+repo_name: A-Hackers-Guide/digital-archaeologist
+repo_url: https://github.com/A-Hackers-Guide/digital-archaeologist
+copyright: Copyright © 2026 Digital Archaeologist contributors · MIT
+
+docs_dir: docs
+
+theme:
+  name: material
+  features:
+    - navigation.instant
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - toc.integrate
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep-orange
+      accent: amber
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep-orange
+      accent: amber
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - tables
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.details
+  - pymdownx.tabbed:
+      alternate_style: true
+  - toc:
+      permalink: true
+
+nav:
+  - Overview: index.md
+  - Install: INSTALL.md
+  - CLI reference: CLI.md
+  - Features: FEATURES.md
+  - Format catalog: formats.md
+  - JSON schema: json-schema.md
+  - Forensics guide: FORENSICS.md
+  - Unknown-format research: UNKNOWN_FORMATS.md
+  - Architecture: ARCHITECTURE.md
+  - macOS build notes: MACOS.md
+  - Release process: RELEASE.md
