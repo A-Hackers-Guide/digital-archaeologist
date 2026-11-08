@@ -41,3 +41,9 @@ option(DA_FUZZ "Build libFuzzer targets (needs clang)" OFF)
 if(DA_FUZZ)
   add_subdirectory(fuzz)
 endif()
+
+# --- Benchmarks (opt-in; no third-party deps) ---
+option(DA_BENCH "Build micro-benchmark executables" OFF)
+if(DA_BENCH)
+  add_subdirectory(bench)
+endif()

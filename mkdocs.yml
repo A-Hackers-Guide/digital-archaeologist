@@ -51,6 +51,7 @@ nav:
   - Features: FEATURES.md
   - Format catalog: formats.md
   - JSON schema: json-schema.md
+  - Benchmarks: benchmarks.md
   - Forensics guide: FORENSICS.md
   - Unknown-format research: UNKNOWN_FORMATS.md
   - Architecture: ARCHITECTURE.md
