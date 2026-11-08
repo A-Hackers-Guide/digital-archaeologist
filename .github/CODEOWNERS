@@ -1,0 +1,20 @@
+*                                       @A-Hackers-Guide
+
+# Library + CLI
+/src/                                   @A-Hackers-Guide
+/include/                               @A-Hackers-Guide
+
+# Tests + benches + fuzz
+/tests/                                 @A-Hackers-Guide
+/bench/                                 @A-Hackers-Guide
+/fuzz/                                  @A-Hackers-Guide
+
+# CI + release + security
+/.github/workflows/                     @A-Hackers-Guide
+/.github/dependabot.yml                 @A-Hackers-Guide
+/SECURITY.md                            @A-Hackers-Guide
+
+# Docs
+/docs/                                  @A-Hackers-Guide
+/mkdocs.yml                             @A-Hackers-Guide
+/README.md                              @A-Hackers-Guide

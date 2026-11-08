@@ -1,0 +1,55 @@
+name: Bug
+description: Something's wrong with Digital Archaeologist.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `archaeologist --version`.
+      placeholder: "2.3.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS
+      options:
+        - macOS (Apple silicon)
+        - macOS (Intel)
+        - Windows 11
+        - Windows 10
+        - Ubuntu / Debian
+        - Arch / other Linux
+        - FreeBSD
+        - other
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Exact command line
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: what_happened
+    attributes:
+      label: What happened vs. what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: file
+    attributes:
+      label: Input file characteristics
+      description: Size, SHA-256, and (if shareable) a link to the file. Don't paste binary content inline.
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Output / logs
+      render: text
+    validations:
+      required: false

@@ -1,0 +1,61 @@
+name: Add a format
+description: Request detection support for a new file format.
+title: "[format] "
+labels: ["format-request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Detection signatures are one-line C++ `if` blocks in
+        `src/analyzer.cpp` — see the
+        [format catalog](https://a-hackers-guide.github.io/digital-archaeologist/formats/).
+        If you can send a PR instead of an issue, even better.
+  - type: input
+    id: format_name
+    attributes:
+      label: Format name
+      placeholder: "Nintendo Switch NSZ"
+    validations:
+      required: true
+  - type: input
+    id: offset
+    attributes:
+      label: Byte offset of the magic
+      placeholder: "0"
+    validations:
+      required: true
+  - type: textarea
+    id: magic
+    attributes:
+      label: Magic bytes
+      description: Hex form, e.g. `50 46 53 30`.
+    validations:
+      required: true
+  - type: input
+    id: category
+    attributes:
+      label: Category
+      placeholder: "image / container / filesystem / game-rom / firmware / …"
+    validations:
+      required: true
+  - type: input
+    id: mime
+    attributes:
+      label: MIME type (if any)
+      placeholder: "application/x-nintendo-switch-nsz"
+    validations:
+      required: false
+  - type: input
+    id: docs
+    attributes:
+      label: Documentation
+      description: Wiki / spec / reverse-engineering notes URL.
+    validations:
+      required: false
+  - type: textarea
+    id: example
+    attributes:
+      label: Example file
+      description: Where to find a sample (if freely available).
+    validations:
+      required: false
