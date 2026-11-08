@@ -521,6 +521,191 @@ void detect_signatures(const Bytes& d, std::vector<Detection>& out) {
     add(out, "script", "Script with shebang", 95, "text/x-script",
         {{"signature", "#! interpreter line", 95}});
   }
+
+  // ======================================================================
+  //  Tier-F additions: 30 more formats
+  // ======================================================================
+
+  // Databases + DB sidecar files
+  if (starts_with(d, {0x37, 0x7F, 0x06, 0x82}) ||
+      starts_with(d, {0x37, 0x7F, 0x06, 0x83})) {
+    add(out, "database", "SQLite WAL", 100, "",
+        {{"signature", "SQLite write-ahead log magic", 100}});
+  }
+  if (starts_with(d, {0xd9, 0xd5, 0x05, 0xf9, 0x20, 0xa1, 0x63, 0xd7})) {
+    add(out, "database", "SQLite rollback journal", 100, "",
+        {{"signature", "SQLite journal magic", 100}});
+  }
+  if (starts_with_str(d, "REDIS")) {
+    add(out, "database", "Redis RDB snapshot", 95, "",
+        {{"signature", "REDIS magic", 95}});
+  }
+
+  // Bytecode / VMs
+  if (starts_with(d, {0x1b, 'L', 'u', 'a'})) {
+    add(out, "bytecode", "Lua compiled chunk", 100, "",
+        {{"signature", "\\x1BLua header", 100}});
+  }
+
+  // Disk images
+  if (starts_with_str(d, "QED")) {
+    add(out, "disk-image", "QEMU QED", 100, "",
+        {{"signature", "QED header", 100}});
+  }
+  if (starts_with_str(d, "<<< Oracle VM VirtualBox Disk Image >>>")) {
+    add(out, "disk-image", "VirtualBox VDI", 100, "",
+        {{"signature", "VDI preheader string", 100}});
+  }
+
+  // Game ROMs / binaries
+  if (starts_with(d, {0x80, 0x37, 0x12, 0x40})) {
+    add(out, "game-rom", "Nintendo 64 ROM (.z64, big-endian)", 100, "",
+        {{"signature", "N64 header 80 37 12 40", 100}});
+  }
+  if (starts_with_str(d, "PFS0")) {
+    add(out, "game-rom", "Nintendo Switch NSP / NCA (PFS0)", 100, "",
+        {{"signature", "PFS0 header", 100}});
+  }
+  if (d.size() >= 0x104 && starts_with_str(d, "HEAD", 0x100)) {
+    add(out, "game-rom", "Nintendo Switch XCI (gamecard)", 95, "",
+        {{"signature", "HEAD at offset 0x100", 95}});
+  }
+  if (starts_with_str(d, "XBEH")) {
+    add(out, "game-rom", "Xbox XBE executable", 100, "",
+        {{"signature", "XBEH header", 100}});
+  }
+  if (starts_with_str(d, "XEX2")) {
+    add(out, "game-rom", "Xbox 360 XEX2 executable", 100, "",
+        {{"signature", "XEX2 header", 100}});
+  }
+  if (starts_with_str(d, "PS-X EXE")) {
+    add(out, "game-rom", "PlayStation 1 PS-X EXE", 100, "",
+        {{"signature", "PS-X EXE header", 100}});
+  }
+
+  // Bethesda / modding
+  if (starts_with_str(d, "TES3") || starts_with_str(d, "TES4") ||
+      starts_with_str(d, "TES5")) {
+    add(out, "game-asset", "Bethesda ESM/ESP plugin", 100, "",
+        {{"signature", "TES3/TES4/TES5 header", 100}});
+  }
+  if (starts_with_str(d, "BSA\0", 0)) {
+    add(out, "game-asset", "Bethesda BSA archive", 100, "",
+        {{"signature", "BSA header", 100}});
+  }
+
+  // Audio (extra)
+  if (starts_with(d, {'R', 'I', 'F', 'F'}) && d.size() >= 12 &&
+      starts_with_str(d, "sfbk", 8)) {
+    add(out, "audio", "SoundFont 2 (RIFF/sfbk)", 100,
+        "audio/x-soundfont",
+        {{"signature", "RIFF...sfbk", 100}});
+  }
+  if (starts_with(d, {0x7f, 0xfe, 0x80, 0x01})) {
+    add(out, "audio", "DTS Coherent Acoustics", 100, "audio/vnd.dts",
+        {{"signature", "DTS sync word", 100}});
+  }
+  if (starts_with(d, {0x0b, 0x77})) {
+    add(out, "audio", "AC-3 (Dolby Digital)", 85, "audio/ac3",
+        {{"signature", "AC-3 sync word", 85}});
+  }
+
+  // 3D / scientific
+  if (starts_with_str(d, "glTF")) {
+    add(out, "3d-model", "glTF binary (.glb)", 100, "model/gltf-binary",
+        {{"signature", "glTF header", 100}});
+  }
+  if (starts_with(d, {'O', 'b', 'j', 0x01})) {
+    add(out, "data", "Apache Avro container", 100,
+        "application/vnd.apache.avro+binary",
+        {{"signature", "Obj\\x01 header", 100}});
+  }
+
+  // Windows forensic / event logs
+  if (starts_with_str(d, "ElfFile\0")) {
+    add(out, "log", "Windows Event Log (EVTX)", 100,
+        "application/x-ms-evtx",
+        {{"signature", "ElfFile header", 100}});
+  }
+  if (starts_with_str(d, "PAGEDUMP") || starts_with_str(d, "PAGEDU64")) {
+    add(out, "memory-dump", "Windows crash dump", 100, "",
+        {{"signature", "PAGEDUMP / PAGEDU64 header", 100}});
+  }
+
+  // Compression + archives (extra)
+  if (starts_with(d, {'b', 'v', 'x', '-'}) ||
+      starts_with(d, {'b', 'v', 'x', '1'}) ||
+      starts_with(d, {'b', 'v', 'x', '2'}) ||
+      starts_with(d, {'b', 'v', 'x', 'n'})) {
+    add(out, "container", "Apple LZFSE", 100, "application/x-lzfse",
+        {{"signature", "bvx* block header", 100}});
+  }
+  if (starts_with_str(d, "xar!")) {
+    add(out, "container", "xar archive", 100, "application/x-xar",
+        {{"signature", "xar! magic", 100}});
+  }
+  if (starts_with(d, {0x60, 0xea})) {
+    add(out, "container", "ARJ archive", 85, "application/x-arj",
+        {{"signature", "ARJ sync bytes", 85}});
+  }
+  if (d.size() >= 7 && starts_with_str(d, "-lh", 2)) {
+    // LHA/LZH typically: "..-lh0-" at offset 2
+    add(out, "container", "LHA/LZH archive", 85, "application/x-lha",
+        {{"signature", "-lh?- marker at offset 2", 85}});
+  }
+
+  // Images (extra)
+  if (starts_with(d, {'I', 'I', 0xBC})) {
+    add(out, "image", "JPEG XR", 100, "image/jxr",
+        {{"signature", "JXR magic", 100}});
+  }
+  if (starts_with(d, {'8', 'B', 'P', 'B'})) {
+    add(out, "image", "Photoshop Large Document (PSB)", 100,
+        "image/vnd.adobe.photoshop",
+        {{"signature", "8BPB header", 100}});
+  }
+  if (starts_with_str(d, "FUJIFILMCCD-RAW")) {
+    add(out, "image", "Fujifilm RAF raw", 100, "image/x-fuji-raf",
+        {{"signature", "FUJIFILMCCD-RAW header", 100}});
+  }
+
+  // Monitor / hardware config
+  if (starts_with(d, {0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00})) {
+    add(out, "config", "EDID monitor descriptor", 100, "",
+        {{"signature", "EDID fixed preamble", 100}});
+  }
+
+  // Reverse engineering / tooling
+  if (starts_with_str(d, "IDA1") || starts_with_str(d, "IDA2")) {
+    add(out, "database", "IDA Pro database", 100, "",
+        {{"signature", "IDA1/IDA2 header", 100}});
+  }
+
+  // Protocols
+  if (starts_with(d, {0xf9, 0xbe, 0xb4, 0xd9})) {
+    add(out, "blockchain", "Bitcoin block file (mainnet)", 100, "",
+        {{"signature", "Bitcoin mainnet magic", 100}});
+  }
+
+  // Binary diffs / patches
+  if (starts_with(d, {0xd6, 0xc3, 0xc4, 0x00}) ||
+      starts_with(d, {0xd6, 0xc3, 0xc4, 0x01})) {
+    add(out, "patch", "VCDIFF (RFC 3284)", 100,
+        "application/vnd.vcdiff",
+        {{"signature", "VCDIFF header", 100}});
+  }
+
+  // Office/open document (ODF detection beyond just ZIP)
+  if (starts_with(d, {'P', 'K', 0x03, 0x04}) &&
+      d.size() >= 60 &&
+      starts_with_str(d, "mimetype", 30) &&
+      std::memcmp(d.data() + 38, "application/vnd.oasis.opendocument.",
+                  std::min<std::size_t>(d.size() - 38, 36)) == 0) {
+    add(out, "document", "OpenDocument (ODT/ODS/ODP)", 90,
+        "application/vnd.oasis.opendocument",
+        {{"signature", "mimetype entry at ZIP offset 30", 90}});
+  }
+
 }
 
 void add_entropy_notes(Report& r) {

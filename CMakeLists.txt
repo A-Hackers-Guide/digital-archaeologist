@@ -16,6 +16,7 @@ add_library(da_core STATIC
   src/analyzer.cpp
   src/base64.cpp
   src/carve.cpp
+  src/container.cpp
   src/crc32.cpp
   src/hashing.cpp
   src/strings_ex.cpp

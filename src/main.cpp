@@ -19,6 +19,7 @@
 #include "analyzer.hpp"
 #include "base64.hpp"
 #include "carve.hpp"
+#include "container.hpp"
 #include "crc32.hpp"
 #include "hashing.hpp"
 #include "strings_ex.hpp"
@@ -28,7 +29,7 @@ namespace fs = std::filesystem;
 
 namespace {
 
-constexpr const char* kVersion = "2.2.0";
+constexpr const char* kVersion = "2.3.0";
 
 void print_version() {
   std::cout << "Digital Archaeologist v" << kVersion << "\n";
@@ -87,6 +88,8 @@ void print_help(const std::string& topic = "") {
          "  --timeline             Filesystem + format-embedded timestamps\n"
          "  --carve OUTDIR         Carve embedded ZIP/GZIP/PNG/JPEG/PDF/...\n"
          "                         into OUTDIR as <offset>.<ext> files\n"
+         "  --list                 List entries of a ZIP / TAR / GZIP\n"
+         "                         (headers only; nothing is decompressed)\n"
          "\n"
          "Transport:\n"
          "  --base64-encode        Base64-encode the file to stdout\n"
@@ -127,6 +130,7 @@ struct Args {
   bool entropy = false;
   bool mime_only = false;
   bool timeline = false;
+  bool list = false;
   bool base64_encode = false;
   bool base64_decode = false;
   bool quiet = false;
@@ -174,6 +178,7 @@ std::optional<Args> parse_args(int argc, char** argv) {
     else if (x == "--entropy") a.entropy = true;
     else if (x == "--mime") a.mime_only = true;
     else if (x == "--timeline") a.timeline = true;
+    else if (x == "--list") a.list = true;
     else if (x == "--ascii-only") a.ascii_only = true;
     else if (x == "--utf16-only") a.utf16_only = true;
     else if (x == "--carve") {
@@ -338,6 +343,29 @@ int do_timeline(const Args& a) {
   return 0;
 }
 
+int do_list(const Args& a) {
+  auto d = read_file_all(a.path, a.max_bytes);
+  auto l = da::list_container(d);
+  if (l.format.empty()) {
+    std::cerr << "not a supported container\n";
+    return 1;
+  }
+  std::cout << l.format;
+  if (!l.inner_name.empty()) std::cout << "  inner_name=" << l.inner_name;
+  std::cout << "  entries=" << l.entries.size()
+            << (l.truncated ? "  (truncated)" : "") << "\n";
+  for (const auto& e : l.entries) {
+    std::cout << e.size << "\t" << e.path;
+    if (e.crc32) {
+      char buf[12];
+      std::snprintf(buf, sizeof(buf), "%08x", e.crc32);
+      std::cout << "\t" << buf;
+    }
+    std::cout << "\n";
+  }
+  return 0;
+}
+
 int do_scan(const Args& a) {
   std::error_code ec;
   for (fs::recursive_directory_iterator it(a.scan_dir, ec), end; it != end;
@@ -467,6 +495,7 @@ int main(int argc, char** argv) {
     if (!a.scan_dir.empty()) return do_scan(a);
     if (a.path.empty()) { print_help(); return 2; }
     if (!a.carve_dir.empty()) return do_carve(a);
+    if (a.list) return do_list(a);
     if (a.base64_encode || a.base64_decode) return do_base64(a);
     if (!a.find_text.empty() || !a.find_hex.empty()) return do_find(a);
     if (a.mime_only) return do_mime(a);
