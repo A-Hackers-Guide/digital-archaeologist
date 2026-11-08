@@ -43,6 +43,12 @@ struct AnalyzeOptions {
 
 Report analyze(const std::filesystem::path& path, AnalyzeOptions opt = {});
 
+// Same as analyze(), but reads from an in-memory buffer. Useful for fuzzing
+// and unit tests. `synthetic_name` is reported in Report::path.
+Report analyze_bytes(const std::string& synthetic_name,
+                     const std::vector<unsigned char>& data,
+                     AnalyzeOptions opt = {});
+
 // Pretty-print a Report to stdout in human form. JSON is a separate call.
 void print_report(const Report& r);
 

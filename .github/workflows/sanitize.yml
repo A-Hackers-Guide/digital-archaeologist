@@ -1,0 +1,75 @@
+name: Sanitize
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  asan-ubsan:
+    name: ASan + UBSan (clang, Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: |
+          cmake -S . -B build-sanitize \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_CXX_FLAGS="-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+
+      - name: Build
+        run: cmake --build build-sanitize --parallel
+
+      - name: Test
+        env:
+          ASAN_OPTIONS: detect_leaks=0:halt_on_error=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: ctest --test-dir build-sanitize --output-on-failure
+
+  fuzz:
+    name: libFuzzer — analyze + carve (60s each)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install clang
+        run: sudo apt-get update && sudo apt-get install -y clang
+
+      - name: Configure fuzz build
+        run: |
+          cmake -S . -B build-fuzz \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DDA_FUZZ=ON \
+            -DCMAKE_CXX_FLAGS="-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+
+      - name: Build fuzz targets
+        run: |
+          cmake --build build-fuzz --parallel --target da_fuzz_analyze da_fuzz_carve
+
+      - name: Run analyze fuzzer (60s)
+        env:
+          ASAN_OPTIONS: detect_leaks=0:halt_on_error=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: |
+          mkdir -p corpus-analyze
+          ./build-fuzz/fuzz/da_fuzz_analyze \
+            -max_total_time=60 \
+            -rss_limit_mb=1024 \
+            -max_len=65536 \
+            corpus-analyze
+
+      - name: Run carve fuzzer (60s)
+        env:
+          ASAN_OPTIONS: detect_leaks=0:halt_on_error=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: |
+          mkdir -p corpus-carve
+          ./build-fuzz/fuzz/da_fuzz_carve \
+            -max_total_time=60 \
+            -rss_limit_mb=1024 \
+            -max_len=65536 \
+            corpus-carve
