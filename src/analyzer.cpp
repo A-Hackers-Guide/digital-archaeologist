@@ -919,6 +919,111 @@ void detect_signatures(const Bytes& d, std::vector<Detection>& out) {
     add(out, "3d-model", "OpenVDB", 100, "",
         {{"signature", "OpenVDB header", 100}});
   }
+
+  // ======================================================================
+  //  Tier-I additions: another 15 formats
+  // ======================================================================
+
+  // Executables / platform (more)
+  if (starts_with(d, {0x4d, 0x44, 0x4d, 0x50, 0x93, 0xa7})) {
+    // Already catch MDMP above with 'MDMP'; this is the full 6-byte marker
+    // that also includes the DUMP_HEADER signature.
+    // (Kept narrow — no-op if MDMP handler already fired.)
+  }
+
+  // Containers / packages (more)
+  if (starts_with(d, {0xca, 0xfe, 0xd0, 0x0d})) {
+    add(out, "executable", "Java pack200 (.pack.gz inner header)", 100,
+        "application/x-java-pack200",
+        {{"signature", "pack200 magic CAFED00D", 100}});
+  }
+  if (starts_with(d, {0xca, 0xfe, 0xd0, 0x0e})) {
+    add(out, "data", "LLVM bitcode wrapper", 100,
+        "application/x-llvm-bitcode",
+        {{"signature", "LLVM bitcode wrapper magic CAFED00E", 100}});
+  }
+  if (starts_with(d, {'B', 'C', 0xc0, 0xde})) {
+    add(out, "data", "LLVM bitcode (bare)", 100, "application/x-llvm-bitcode",
+        {{"signature", "LLVM bitcode magic BC C0 DE", 100}});
+  }
+
+  // Firmware / embedded
+  if (starts_with(d, {'U', 'B', 'I', '#'})) {
+    add(out, "firmware", "UBIFS / UBI image", 100, "",
+        {{"signature", "UBI# header", 100}});
+  }
+  if (starts_with(d, {0x27, 0x05, 0x19, 0x56})) {
+    add(out, "firmware", "U-Boot legacy image", 100, "",
+        {{"signature", "U-Boot IH_MAGIC", 100}});
+  }
+  if (starts_with(d, {'C', 'r', 'O', 'S'})) {
+    add(out, "firmware", "Chrome OS / coreboot cbfs", 95, "",
+        {{"signature", "CrOS firmware marker", 95}});
+  }
+  if (starts_with(d, {'I', 'N', 'T', 'E', 'L'})) {
+    // Weak - but guard by expecting the IFD at a known offset.
+    // Keep informational.
+    // add("firmware", "Intel IFD / ME firmware", 60, ...);
+    // (Omitted: too false-positive prone.)
+  }
+
+  // Images (even more)
+  if (starts_with(d, {'q', 'o', 'i', 'f'})) {
+    add(out, "image", "QOI (Quite OK Image)", 100, "image/qoi",
+        {{"signature", "qoif header", 100}});
+  }
+  if (starts_with(d, {'f', 'a', 'r', 'b', 'f', 'e', 'l', 'd'})) {
+    add(out, "image", "Farbfeld", 100, "image/x-farbfeld",
+        {{"signature", "farbfeld header", 100}});
+  }
+
+  // Audio (more)
+  if (starts_with(d, {'M', 'A', 'C', ' '}) && d.size() >= 8) {
+    add(out, "audio", "Monkey's Audio (APE)", 95, "audio/x-ape",
+        {{"signature", "MAC header", 95}});
+  }
+  if (starts_with(d, {'w', 'v', 'p', 'k'})) {
+    add(out, "audio", "WavPack", 100, "audio/x-wavpack",
+        {{"signature", "wvpk header", 100}});
+  }
+  if (starts_with(d, {'#', '!', 'A', 'M', 'R'}) ||
+      starts_with(d, {'#', '!', 'A', 'M', 'R', '-', 'W', 'B'})) {
+    add(out, "audio", "AMR-NB / AMR-WB speech", 100, "audio/amr",
+        {{"signature", "#!AMR header", 100}});
+  }
+
+  // Serialization / RPC
+  if (starts_with(d, {'C', 'a', 'p', 'n', 'P'}) ||
+      starts_with(d, {0x00, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00})) {
+    // CapnProto has no fixed magic per se, so match on the stream header
+    // marker used by the official stream encoding.
+    add(out, "data", "Cap'n Proto stream (best-effort)", 70, "",
+        {{"heuristic", "Cap'n Proto stream header shape", 70}});
+  }
+
+  // Package / app installers
+  //
+  // OOXML / AppX / MSIX / EPUB — detectable by a ZIP whose first local-file
+  // entry is "[Content_Types].xml" (19 bytes starting at offset 30).
+  // Guard explicitly includes the 19 bytes of filename past offset 30.
+  if (starts_with(d, {0x50, 0x4b, 0x03, 0x04}) && d.size() >= 30 + 19 &&
+      std::memcmp(d.data() + 30, "[Content_Types].xml", 19) == 0) {
+    add(out, "package", "OOXML / AppX / MSIX / EPUB (ZIP + content types)",
+        85, "application/zip",
+        {{"signature", "ZIP w/ [Content_Types].xml first entry", 85},
+         {"note", "narrow brand needs further inspection (docx/xlsx/pptx/appx/epub)", 0}});
+  }
+
+  // Bluetooth / wireless capture
+  if (starts_with_str(d, "\xc3\xa1\xa1\xc3")) {
+    // Btsnoop packet capture uses "btsnoop\0" at offset 0.
+    // (Left as placeholder — proper check below.)
+  }
+  if (d.size() >= 8 && std::memcmp(d.data(), "btsnoop\x00", 8) == 0) {
+    add(out, "capture", "Bluetooth btsnoop", 100,
+        "application/vnd.tcpdump.pcap",
+        {{"signature", "btsnoop header", 100}});
+  }
 }
 
 void add_entropy_notes(Report& r) {
