@@ -1,64 +1,383 @@
 ﻿#include "analyzer.hpp"
+
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstdint>
+#include <cstring>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
-#include <map>
 #include <sstream>
-#include <array>
+#include <stdexcept>
+#include <string>
+
+#include "hashing.hpp"
 
 namespace da {
 namespace {
-using U=std::uint32_t;
-U R(U x,int n){return (x>>n)|(x<<(32-n));}
-std::string sha256(const std::vector<unsigned char>& in){
- static const U K[64]={0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2};
- U h[8]={0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19};
- std::vector<unsigned char> d=in; std::uint64_t bits=(std::uint64_t)d.size()*8; d.push_back(0x80); while(d.size()%64!=56)d.push_back(0); for(int i=7;i>=0;i--)d.push_back((unsigned char)(bits>>(i*8)));
- for(size_t off=0;off<d.size();off+=64){ U w[64]{}; for(int i=0;i<16;i++)for(int j=0;j<4;j++)w[i]=(w[i]<<8)|d[off+i*4+j]; for(int i=16;i<64;i++){U s0=R(w[i-15],7)^R(w[i-15],18)^(w[i-15]>>3);U s1=R(w[i-2],17)^R(w[i-2],19)^(w[i-2]>>10);w[i]=w[i-16]+s0+w[i-7]+s1;} U a=h[0],b=h[1],c=h[2],e=h[4],f=h[5],g=h[6],hh=h[7],dd=h[3]; for(int i=0;i<64;i++){U S1=R(e,6)^R(e,11)^R(e,25);U ch=(e&f)^((~e)&g);U t1=hh+S1+ch+K[i]+w[i];U S0=R(a,2)^R(a,13)^R(a,22);U maj=(a&b)^(a&c)^(b&c);U t2=S0+maj;hh=g;g=f;f=e;e=dd+t1;dd=c;c=b;b=a;a=t1+t2;} h[0]+=a;h[1]+=b;h[2]+=c;h[3]+=dd;h[4]+=e;h[5]+=f;h[6]+=g;h[7]+=hh; }
- std::ostringstream x; x<<std::hex<<std::setfill('0'); for(U v:h)x<<std::setw(8)<<v; return x.str();
-}
-bool eq(const std::vector<unsigned char>&d,std::initializer_list<unsigned char> s,size_t p=0){return p+s.size()<=d.size()&&std::equal(s.begin(),s.end(),d.begin()+p);}
-void add(std::vector<Detection>& out,std::string c,std::string f,int conf,std::initializer_list<Evidence> e){out.push_back({std::move(c),std::move(f),conf,std::vector<Evidence>(e)});}
-}
-Report analyze(const std::filesystem::path& p){
- Report r; r.path=p; std::ifstream f(p,std::ios::binary); if(!f)throw std::runtime_error("cannot open input"); f.seekg(0,std::ios::end); r.size=(std::uintmax_t)f.tellg(); f.seekg(0); std::vector<unsigned char>d((size_t)r.size); if(!d.empty())f.read((char*)d.data(),(std::streamsize)d.size());
- r.sha256=sha256(d); std::map<unsigned,int> cnt; for(unsigned char c:d)cnt[c]++; if(!d.empty())for(auto [c,n]:cnt){double q=(double)n/d.size();r.entropy-=q*std::log2(q);}
- auto A=[&](std::string c,std::string fmt,int conf,std::initializer_list<Evidence> e){add(r.detections,c,fmt,conf,e);};
- if(eq(d,{0x4d,0x5a}))A("executable","Windows PE/DOS MZ",100,{{"signature","MZ header",100}});
- if(eq(d,{0x7f,'E','L','F'}))A("executable","ELF",100,{{"signature","ELF magic",100}});
- if(eq(d,{0xfe,0xed,0xfa,0xce})||eq(d,{0xce,0xfa,0xed,0xfe})||eq(d,{0xfe,0xed,0xfa,0xcf})||eq(d,{0xcf,0xfa,0xed,0xfe})||eq(d,{0xca,0xfe,0xba,0xbe})||eq(d,{0xbe,0xba,0xfe,0xca}))A("executable","Mach-O / universal binary",100,{{"signature","Apple executable magic",100}});
- if(eq(d,{0x25,0x50,0x44,0x46,0x2d}))A("document","PDF",100,{{"signature","%PDF-",100}});
- if(eq(d,{0x89,'P','N','G',0x0d,0x0a,0x1a,0x0a}))A("image","PNG",100,{{"signature","PNG magic",100}});
- if(eq(d,{0xff,0xd8,0xff}))A("image","JPEG",100,{{"signature","JPEG SOI",100}});
- if(eq(d,{'G','I','F','8'}))A("image","GIF",100,{{"signature","GIF header",100}});
- if(eq(d,{'P','K',0x03,0x04})||eq(d,{'P','K',0x05,0x06})||eq(d,{'P','K',0x07,0x08}))A("container","ZIP",100,{{"signature","PK ZIP signature",100}});
- if(eq(d,{0x1f,0x8b}))A("container","GZIP",100,{{"signature","gzip magic",100}});
- if(eq(d,{'7','z',0xbc,0xaf,0x27,0x1c}))A("container","7-Zip",100,{{"signature","7z magic",100}});
- if(eq(d,{'R','a','r','!',0x1a,0x07}))A("container","RAR",100,{{"signature","RAR marker",100}});
- if(eq(d,{'S','Q','L','i','t','e',' ','f','o','r','m','a','t',' ','3',0}))A("database","SQLite 3",100,{{"signature","SQLite header",100}});
- if(d.size()>=0x8006 && std::string(d.begin()+0x8001,d.begin()+0x8006)=="CD001")A("filesystem","ISO 9660",100,{{"signature","Primary Volume Descriptor",100}});
- if(d.size()>=512 && d[510]==0x55&&d[511]==0xaa)A("partition","MBR-compatible boot sector",90,{{"signature","0x55AA at sector 0",60},{"structure","possible partition table",30}});
- if(d.size()>=520 && eq(d,{'E','F','I',' ','P','A','R','T'},512))A("partition","GPT protective/EFI header",100,{{"signature","EFI PART at LBA1",100}});
- if(d.size()>=11 && std::string(d.begin()+3,d.begin()+11)=="NTFS    ")A("filesystem","NTFS",100,{{"signature","NTFS OEM ID",100}});
- if(d.size()>=90 && std::string(d.begin()+3,d.begin()+11)=="EXFAT   ")A("filesystem","exFAT",100,{{"signature","EXFAT OEM ID",100}});
- if(d.size()>=8 && (std::string(d.begin()+3,d.begin()+8)=="FAT12"||std::string(d.begin()+3,d.begin()+8)=="FAT16"))A("filesystem","FAT12/FAT16",95,{{"signature","FAT OEM label",80},{"structure","boot-sector geometry",15}});
- if(d.size()>=90 && std::string(d.begin()+54,d.begin()+62)=="FAT32   ")A("filesystem","FAT32",100,{{"signature","FAT32 label",100}});
- if(d.size()>=0x43a && d[0x438]==0x53&&d[0x439]==0xef)A("filesystem","ext2/ext3/ext4",100,{{"signature","superblock magic 0xEF53",100}});
- if(d.size()>=0x48 && std::string(d.begin()+0x40,d.begin()+0x48)=="NXSB\0\0\0\0")A("filesystem","APFS",100,{{"signature","NXSB container superblock",100}});
- if(d.size()>=0x400 && std::string(d.begin()+0x400,d.begin()+0x404)=="H+\0\0")A("filesystem","HFS+ (heuristic)",85,{{"signature","HFS+ signature location",70},{"structure","volume header position",15}});
- if(d.size()>=4 && eq(d,{'h','s','q','s'}))A("filesystem","SquashFS",100,{{"signature","hsqs superblock",100}});
- if(r.entropy>7.5)r.notes.push_back("High entropy: data may be compressed, encrypted, packed, or otherwise binary-dense.");
- else if(r.entropy<2.0)r.notes.push_back("Very low entropy: data is highly repetitive or sparse.");
- if(r.detections.empty())r.notes.push_back("No known signature matched. This is not proof that the format is unknown; inspect structure, entropy, strings, and offsets next.");
- return r;
-}
-void print_report(const Report&r){
- std::cout<<"DIGITAL ARCHAEOLOGIST v1.0.0-pre1\n"<<"Input: "<<r.path.string()<<"\nSize: "<<r.size<<" bytes\nSHA-256: "<<r.sha256<<"\nEntropy: "<<std::fixed<<std::setprecision(4)<<r.entropy<<" bits/byte\n\n";
- if(r.detections.empty())std::cout<<"Detection: UNKNOWN / UNRESOLVED\n"; else for(const auto&d:r.detections){std::cout<<"Detection: "<<d.format<<" ["<<d.confidence<<"%] ("<<d.category<<")\n";for(const auto&e:d.evidence)std::cout<<"  + "<<e.label<<": "<<e.detail<<" ("<<e.weight<<")\n";}
- for(const auto&n:r.notes)std::cout<<"Note: "<<n<<"\n";
- if(!r.detections.empty()&&r.detections.front().confidence==100)std::cout<<"\nCOMPLETE ANSWER FOUND (for the matched signature; structural completeness is not guaranteed).\n";
-}
+
+using Bytes = std::vector<unsigned char>;
+
+inline bool starts_with(const Bytes& d, std::initializer_list<unsigned char> s,
+                        std::size_t off = 0) {
+  if (off + s.size() > d.size()) return false;
+  return std::equal(s.begin(), s.end(), d.begin() + off);
 }
 
+inline bool starts_with_str(const Bytes& d, const char* s, std::size_t off = 0) {
+  std::size_t n = std::strlen(s);
+  if (off + n > d.size()) return false;
+  return std::memcmp(d.data() + off, s, n) == 0;
+}
+
+void add(std::vector<Detection>& out, std::string category, std::string format,
+         int confidence, std::string mime,
+         std::initializer_list<Evidence> evidence) {
+  Detection d;
+  d.category = std::move(category);
+  d.format = std::move(format);
+  d.confidence = confidence;
+  d.mime = std::move(mime);
+  d.evidence.assign(evidence.begin(), evidence.end());
+  out.push_back(std::move(d));
+}
+
+void detect_signatures(const Bytes& d, std::vector<Detection>& out) {
+  // --- Executables ---
+  if (starts_with(d, {0x4d, 0x5a})) {
+    add(out, "executable", "Windows PE / DOS MZ", 100,
+        "application/vnd.microsoft.portable-executable",
+        {{"signature", "MZ header at offset 0", 100}});
+  }
+  if (starts_with(d, {0x7f, 'E', 'L', 'F'})) {
+    add(out, "executable", "ELF", 100, "application/x-elf",
+        {{"signature", "\\x7FELF at offset 0", 100}});
+  }
+  if (starts_with(d, {0xfe, 0xed, 0xfa, 0xce}) ||
+      starts_with(d, {0xce, 0xfa, 0xed, 0xfe}) ||
+      starts_with(d, {0xfe, 0xed, 0xfa, 0xcf}) ||
+      starts_with(d, {0xcf, 0xfa, 0xed, 0xfe})) {
+    add(out, "executable", "Mach-O", 100, "application/x-mach-binary",
+        {{"signature", "Mach-O magic", 100}});
+  }
+  if (starts_with(d, {0xca, 0xfe, 0xba, 0xbe}) ||
+      starts_with(d, {0xbe, 0xba, 0xfe, 0xca})) {
+    // 0xCAFEBABE collides with Java .class files (same magic). Flag both.
+    add(out, "executable", "Mach-O universal (fat binary)", 90,
+        "application/x-mach-binary",
+        {{"signature", "0xCAFEBABE", 60},
+         {"ambiguity", "collides with Java .class", 30}});
+    add(out, "executable", "Java class file", 90, "application/java-vm",
+        {{"signature", "0xCAFEBABE", 60},
+         {"ambiguity", "collides with Mach-O FAT", 30}});
+  }
+
+  // --- Documents / markup ---
+  if (starts_with(d, {0x25, 0x50, 0x44, 0x46, 0x2d})) {
+    add(out, "document", "PDF", 100, "application/pdf",
+        {{"signature", "%PDF- header", 100}});
+  }
+
+  // --- Images ---
+  if (starts_with(d, {0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a})) {
+    add(out, "image", "PNG", 100, "image/png",
+        {{"signature", "PNG magic", 100}});
+  }
+  if (starts_with(d, {0xff, 0xd8, 0xff})) {
+    add(out, "image", "JPEG", 100, "image/jpeg",
+        {{"signature", "JPEG SOI", 100}});
+  }
+  if (starts_with(d, {'G', 'I', 'F', '8', '7', 'a'}) ||
+      starts_with(d, {'G', 'I', 'F', '8', '9', 'a'})) {
+    add(out, "image", "GIF", 100, "image/gif",
+        {{"signature", "GIF87a / GIF89a", 100}});
+  }
+  if (starts_with(d, {'B', 'M'}) && d.size() >= 14) {
+    // BMP file header is 14 bytes; size field at offset 2 is a weak check.
+    add(out, "image", "BMP", 95, "image/bmp",
+        {{"signature", "BM header", 80},
+         {"structure", "14-byte file header present", 15}});
+  }
+
+  // --- Archives / compression ---
+  if (starts_with(d, {'P', 'K', 0x03, 0x04}) ||
+      starts_with(d, {'P', 'K', 0x05, 0x06}) ||
+      starts_with(d, {'P', 'K', 0x07, 0x08})) {
+    add(out, "container", "ZIP", 100, "application/zip",
+        {{"signature", "PK ZIP signature", 100}});
+  }
+  if (starts_with(d, {0x1f, 0x8b})) {
+    add(out, "container", "GZIP", 100, "application/gzip",
+        {{"signature", "gzip magic 1F 8B", 100}});
+  }
+  if (starts_with(d, {'B', 'Z', 'h'})) {
+    add(out, "container", "BZIP2", 100, "application/x-bzip2",
+        {{"signature", "BZh header", 100}});
+  }
+  if (starts_with(d, {0xfd, '7', 'z', 'X', 'Z', 0x00})) {
+    add(out, "container", "XZ", 100, "application/x-xz",
+        {{"signature", "XZ magic", 100}});
+  }
+  if (starts_with(d, {'7', 'z', 0xbc, 0xaf, 0x27, 0x1c})) {
+    add(out, "container", "7-Zip", 100, "application/x-7z-compressed",
+        {{"signature", "7z magic", 100}});
+  }
+  if (starts_with(d, {'R', 'a', 'r', '!', 0x1a, 0x07})) {
+    add(out, "container", "RAR", 100, "application/vnd.rar",
+        {{"signature", "Rar! marker", 100}});
+  }
+  if (starts_with_str(d, "ustar", 257) && d.size() >= 265) {
+    add(out, "container", "TAR (POSIX ustar)", 100,
+        "application/x-tar",
+        {{"signature", "ustar at offset 257", 100}});
+  }
+
+  // --- Audio ---
+  if (starts_with(d, {'I', 'D', '3'})) {
+    add(out, "audio", "MP3 (ID3v2 tagged)", 95, "audio/mpeg",
+        {{"signature", "ID3 tag header", 95}});
+  } else if (starts_with(d, {0xff, 0xfb}) || starts_with(d, {0xff, 0xf3}) ||
+             starts_with(d, {0xff, 0xf2})) {
+    add(out, "audio", "MP3 frame", 85, "audio/mpeg",
+        {{"signature", "MPEG audio sync + Layer III", 85}});
+  }
+  if (starts_with(d, {'R', 'I', 'F', 'F'}) && d.size() >= 12 &&
+      starts_with_str(d, "WAVE", 8)) {
+    add(out, "audio", "WAV (RIFF/WAVE)", 100, "audio/wav",
+        {{"signature", "RIFF...WAVE", 100}});
+  }
+
+  // --- Database ---
+  if (d.size() >= 16 && starts_with_str(d, "SQLite format 3")) {
+    add(out, "database", "SQLite 3", 100, "application/vnd.sqlite3",
+        {{"signature", "SQLite format 3\\0", 100}});
+  }
+
+  // --- Filesystems / disk images ---
+  if (d.size() >= 0x8006 && starts_with_str(d, "CD001", 0x8001)) {
+    add(out, "filesystem", "ISO 9660", 100, "application/x-iso9660-image",
+        {{"signature", "CD001 at offset 0x8001", 100}});
+  }
+  if (d.size() >= 512 && d[510] == 0x55 && d[511] == 0xaa) {
+    add(out, "partition", "MBR-compatible boot sector", 70, "",
+        {{"signature", "0x55AA at offset 510", 50},
+         {"structure", "needs partition-table inspection to confirm", 20}});
+  }
+  if (d.size() >= 520 && starts_with_str(d, "EFI PART", 512)) {
+    add(out, "partition", "GPT (EFI protective header)", 100, "",
+        {{"signature", "EFI PART at LBA1", 100}});
+  }
+  if (d.size() >= 11 && starts_with_str(d, "NTFS    ", 3)) {
+    add(out, "filesystem", "NTFS", 100, "",
+        {{"signature", "NTFS OEM id", 100}});
+  }
+  if (d.size() >= 11 && starts_with_str(d, "EXFAT   ", 3)) {
+    add(out, "filesystem", "exFAT", 100, "",
+        {{"signature", "EXFAT OEM id", 100}});
+  }
+  if (d.size() >= 90 && starts_with_str(d, "FAT32   ", 54)) {
+    add(out, "filesystem", "FAT32", 100, "",
+        {{"signature", "FAT32 label", 100}});
+  }
+  if (d.size() >= 0x43a && d[0x438] == 0x53 && d[0x439] == 0xef) {
+    add(out, "filesystem", "ext2/ext3/ext4", 100, "",
+        {{"signature", "superblock magic 0xEF53 at 0x438", 100}});
+  }
+  if (d.size() >= 0x48 &&
+      std::memcmp(d.data() + 0x40, "NXSB", 4) == 0) {
+    add(out, "filesystem", "APFS", 100, "",
+        {{"signature", "NXSB container superblock", 100}});
+  }
+  // HFS+: signature "H+" (0x482B) at offset 1024, or HFSX (0x4858).
+  if (d.size() >= 1026 && d[1024] == 'H' && (d[1025] == '+' || d[1025] == 'X')) {
+    add(out, "filesystem", "HFS+/HFSX", 100, "",
+        {{"signature",
+          d[1025] == '+' ? "H+ at offset 1024" : "HX at offset 1024", 100}});
+  }
+  if (starts_with(d, {'h', 's', 'q', 's'})) {
+    add(out, "filesystem", "SquashFS", 100, "application/vnd.squashfs",
+        {{"signature", "hsqs superblock", 100}});
+  }
+}
+
+void add_entropy_notes(Report& r) {
+  if (r.entropy > 7.5) {
+    r.notes.push_back(
+        "High entropy: data may be compressed, encrypted, packed, or otherwise "
+        "binary-dense.");
+  } else if (r.entropy < 2.0) {
+    r.notes.push_back(
+        "Very low entropy: data is highly repetitive or sparse.");
+  }
+}
+
+Bytes load_capped(const std::filesystem::path& p, std::uintmax_t cap,
+                  std::uintmax_t file_size, bool& truncated) {
+  std::ifstream f(p, std::ios::binary);
+  if (!f) throw std::runtime_error("cannot open input: " + p.string());
+  std::uintmax_t take = file_size;
+  if (take > cap) {
+    truncated = true;
+    take = cap;
+  }
+  Bytes d;
+  d.resize(static_cast<std::size_t>(take));
+  if (take) f.read(reinterpret_cast<char*>(d.data()),
+                   static_cast<std::streamsize>(take));
+  return d;
+}
+
+std::string json_escape(const std::string& s) {
+  std::string o;
+  o.reserve(s.size() + 2);
+  for (char c : s) {
+    switch (c) {
+      case '"': o += "\\\""; break;
+      case '\\': o += "\\\\"; break;
+      case '\b': o += "\\b"; break;
+      case '\f': o += "\\f"; break;
+      case '\n': o += "\\n"; break;
+      case '\r': o += "\\r"; break;
+      case '\t': o += "\\t"; break;
+      default:
+        if (static_cast<unsigned char>(c) < 0x20) {
+          char buf[8];
+          std::snprintf(buf, sizeof(buf), "\\u%04x", unsigned(c));
+          o += buf;
+        } else {
+          o += c;
+        }
+    }
+  }
+  return o;
+}
+
+}  // namespace
+
+Report analyze(const std::filesystem::path& path, AnalyzeOptions opt) {
+  Report r;
+  r.path = path;
+  std::error_code ec;
+  r.size = std::filesystem::file_size(path, ec);
+  if (ec) throw std::runtime_error("cannot stat input: " + path.string());
+
+  r.sha256 = sha256_file(path);  // always full-file stream
+
+  Bytes d = load_capped(path, opt.max_bytes, r.size, r.truncated);
+  r.bytes_scanned = d.size();
+
+  // Byte statistics + Shannon entropy over the loaded window.
+  std::array<std::uint64_t, 256> cnt{};
+  std::uint64_t printable = 0;
+  for (unsigned char c : d) {
+    ++cnt[c];
+    if (c == 9 || c == 10 || c == 13 || (c >= 32 && c < 127)) ++printable;
+  }
+  if (!d.empty()) {
+    for (auto n : cnt) {
+      if (n == 0) continue;
+      double p = double(n) / double(d.size());
+      r.entropy -= p * std::log2(p);
+    }
+    r.printable_ratio = double(printable) / double(d.size());
+    auto it = std::max_element(cnt.begin(), cnt.end());
+    r.dominant_byte = unsigned(std::distance(cnt.begin(), it));
+    r.dominant_byte_count = *it;
+  }
+
+  detect_signatures(d, r.detections);
+
+  // Text fallback only when nothing else matched.
+  if (r.detections.empty() && r.printable_ratio > 0.97) {
+    add(r.detections, "text", "Plain / structured text", 85, "text/plain",
+        {{"heuristic", "printable ratio > 0.97", 85}});
+  }
+
+  add_entropy_notes(r);
+  if (r.detections.empty()) {
+    r.notes.push_back(
+        "No known signature matched. This is not proof that the format is "
+        "unknown; inspect structure, entropy, strings and offsets next.");
+  }
+  if (r.truncated) {
+    r.notes.push_back("Structural analysis was capped at " +
+                      std::to_string(opt.max_bytes) +
+                      " bytes; SHA-256 covers the whole file.");
+  }
+  return r;
+}
+
+void print_report(const Report& r) {
+  std::cout << "=== DIGITAL ARCHAEOLOGIST ===\n"
+            << "file: " << r.path.string() << "\n"
+            << "size: " << r.size << " bytes\n"
+            << "sha256: " << r.sha256 << "\n"
+            << "entropy: " << std::fixed << std::setprecision(4) << r.entropy
+            << " / 8.0\n"
+            << "printable_ratio: " << r.printable_ratio << "\n"
+            << "bytes_scanned: " << r.bytes_scanned
+            << (r.truncated ? "  (truncated)" : "") << "\n";
+  if (r.detections.empty()) {
+    std::cout << "detection: UNKNOWN / UNRESOLVED\n";
+  } else {
+    for (const auto& det : r.detections) {
+      std::cout << "detection: " << det.format << " [" << det.confidence
+                << "%] (" << det.category << ")";
+      if (!det.mime.empty()) std::cout << "  mime=" << det.mime;
+      std::cout << "\n";
+      for (const auto& ev : det.evidence) {
+        std::cout << "  + " << ev.label << ": " << ev.detail << " ("
+                  << ev.weight << ")\n";
+      }
+    }
+  }
+  for (const auto& n : r.notes) std::cout << "note: " << n << "\n";
+  if (!r.detections.empty() && r.detections.front().confidence == 100) {
+    std::cout
+        << "\nCOMPLETE ANSWER FOUND (for the matched signature; structural "
+           "completeness is not guaranteed).\n";
+  }
+}
+
+void print_report_json(const Report& r) {
+  std::ostringstream o;
+  o << "{";
+  o << "\"path\":\"" << json_escape(r.path.string()) << "\",";
+  o << "\"size\":" << r.size << ",";
+  o << "\"sha256\":\"" << r.sha256 << "\",";
+  o << "\"entropy\":" << std::fixed << std::setprecision(6) << r.entropy
+    << ",";
+  o << "\"printable_ratio\":" << r.printable_ratio << ",";
+  o << "\"bytes_scanned\":" << r.bytes_scanned << ",";
+  o << "\"truncated\":" << (r.truncated ? "true" : "false") << ",";
+  o << "\"dominant_byte\":" << r.dominant_byte << ",";
+  o << "\"dominant_byte_count\":" << r.dominant_byte_count << ",";
+  o << "\"detections\":[";
+  for (std::size_t i = 0; i < r.detections.size(); ++i) {
+    const auto& det = r.detections[i];
+    if (i) o << ",";
+    o << "{\"category\":\"" << json_escape(det.category) << "\","
+      << "\"format\":\"" << json_escape(det.format) << "\","
+      << "\"confidence\":" << det.confidence << ","
+      << "\"mime\":\"" << json_escape(det.mime) << "\","
+      << "\"evidence\":[";
+    for (std::size_t j = 0; j < det.evidence.size(); ++j) {
+      const auto& ev = det.evidence[j];
+      if (j) o << ",";
+      o << "{\"label\":\"" << json_escape(ev.label) << "\","
+        << "\"detail\":\"" << json_escape(ev.detail) << "\","
+        << "\"weight\":" << ev.weight << "}";
+    }
+    o << "]}";
+  }
+  o << "],\"notes\":[";
+  for (std::size_t i = 0; i < r.notes.size(); ++i) {
+    if (i) o << ",";
+    o << "\"" << json_escape(r.notes[i]) << "\"";
+  }
+  o << "]}";
+  std::cout << o.str() << "\n";
+}
+
+}  // namespace da

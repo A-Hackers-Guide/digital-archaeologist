@@ -1,20 +1,32 @@
 cmake_minimum_required(VERSION 3.20)
-project(digital_archaeologist VERSION 2.0.0 LANGUAGES CXX)
+project(digital_archaeologist VERSION 2.1.0 LANGUAGES CXX)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+
 if(MSVC)
- add_compile_options(/W4 /permissive-)
+  add_compile_options(/W4 /permissive-)
 else()
- add_compile_options(-Wall -Wextra -Wpedantic)
+  add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
+
+# --- Library: the analysis engine, reusable from tests ---
+add_library(da_core STATIC
+  src/analyzer.cpp
+  src/base64.cpp
+  src/hashing.cpp
+)
+target_include_directories(da_core PUBLIC include)
+
+# --- Executable: the CLI ---
 add_executable(archaeologist src/main.cpp)
-target_include_directories(archaeologist PRIVATE include)
+target_link_libraries(archaeologist PRIVATE da_core)
+
+install(TARGETS archaeologist RUNTIME DESTINATION bin)
+
+# --- Tests ---
 include(CTest)
 if(BUILD_TESTING)
- add_test(NAME help COMMAND archaeologist --help)
- add_test(NAME help_unknown COMMAND archaeologist --help unknown)
- add_test(NAME help_password COMMAND archaeologist --help password)
- add_test(NAME version COMMAND archaeologist --version)
+  add_subdirectory(tests)
 endif()
-install(TARGETS archaeologist RUNTIME DESTINATION bin)
