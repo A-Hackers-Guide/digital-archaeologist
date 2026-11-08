@@ -199,6 +199,328 @@ void detect_signatures(const Bytes& d, std::vector<Detection>& out) {
     add(out, "filesystem", "SquashFS", 100, "application/vnd.squashfs",
         {{"signature", "hsqs superblock", 100}});
   }
+  if (starts_with(d, {'X', 'F', 'S', 'B'})) {
+    add(out, "filesystem", "XFS", 100, "",
+        {{"signature", "XFSB superblock", 100}});
+  }
+  if (d.size() >= 0x404 &&
+      starts_with(d, {0xf2, 0xf5, 0x2a, 0x10}, 0x400)) {
+    add(out, "filesystem", "F2FS", 100, "",
+        {{"signature", "F2FS magic at offset 0x400", 100}});
+  }
+  if (d.size() >= 0x10048 &&
+      starts_with_str(d, "_BHRfS_M", 0x10040)) {
+    add(out, "filesystem", "btrfs", 100, "",
+        {{"signature", "_BHRfS_M superblock at 0x10040", 100}});
+  }
+  if (starts_with(d, {'Q', 'F', 'I', 0xfb})) {
+    add(out, "disk-image", "QCOW2", 100, "",
+        {{"signature", "QFI\\xFB header", 100}});
+  }
+  if (starts_with(d, {'K', 'D', 'M', 'V'})) {
+    add(out, "disk-image", "VMDK", 100,
+        "application/vnd.vmware.vmdk-stream",
+        {{"signature", "KDMV header", 100}});
+  }
+  if (starts_with_str(d, "conectix")) {
+    add(out, "disk-image", "VHD (footer-at-start variant / copy)", 95, "",
+        {{"signature", "conectix cookie", 95}});
+  }
+
+  // --- Additional images ---
+  if (starts_with(d, {'I', 'I', 0x2a, 0x00}) ||
+      starts_with(d, {'M', 'M', 0x00, 0x2a})) {
+    add(out, "image", "TIFF", 100, "image/tiff",
+        {{"signature", "TIFF byte-order + 42", 100}});
+  }
+  if (starts_with(d, {'R', 'I', 'F', 'F'}) && d.size() >= 12 &&
+      starts_with_str(d, "WEBP", 8)) {
+    add(out, "image", "WebP", 100, "image/webp",
+        {{"signature", "RIFF...WEBP", 100}});
+  }
+  if (starts_with(d, {'R', 'I', 'F', 'F'}) && d.size() >= 12 &&
+      starts_with_str(d, "AVI ", 8)) {
+    add(out, "video", "AVI", 100, "video/x-msvideo",
+        {{"signature", "RIFF...AVI ", 100}});
+  }
+  // ISOBMFF family: MP4, MOV, HEIF/HEIC, AVIF, 3GP, M4A, CR3...
+  if (d.size() >= 12 && starts_with_str(d, "ftyp", 4)) {
+    std::string brand(reinterpret_cast<const char*>(d.data() + 8), 4);
+    struct Brand { const char* brand; const char* format; const char* mime;
+                   const char* cat; };
+    static const Brand kBrands[] = {
+        {"heic", "HEIF/HEIC image", "image/heic", "image"},
+        {"heix", "HEIF/HEIC image", "image/heic", "image"},
+        {"heim", "HEIF/HEIC image", "image/heic", "image"},
+        {"mif1", "HEIF image sequence", "image/heif", "image"},
+        {"msf1", "HEIF image sequence", "image/heif", "image"},
+        {"avif", "AVIF image", "image/avif", "image"},
+        {"avis", "AVIF image sequence", "image/avif", "image"},
+        {"isom", "MP4 (ISO base media)", "video/mp4", "video"},
+        {"iso2", "MP4 (ISO base media)", "video/mp4", "video"},
+        {"mp41", "MP4", "video/mp4", "video"},
+        {"mp42", "MP4", "video/mp4", "video"},
+        {"M4A ", "iTunes M4A audio", "audio/mp4", "audio"},
+        {"M4V ", "iTunes M4V video", "video/mp4", "video"},
+        {"M4B ", "iTunes M4B audiobook", "audio/mp4", "audio"},
+        {"qt  ", "QuickTime movie", "video/quicktime", "video"},
+        {"3gp4", "3GP", "video/3gpp", "video"},
+        {"3gp5", "3GP", "video/3gpp", "video"},
+        {"3g2a", "3GPP2", "video/3gpp2", "video"},
+        {"crx ", "Canon CR3 raw", "image/x-canon-cr3", "image"},
+    };
+    bool matched = false;
+    for (const auto& b : kBrands) {
+      if (brand == b.brand) {
+        add(out, b.cat, b.format, 100, b.mime,
+            {{"signature", std::string("ftyp brand '") + b.brand + "'", 100}});
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) {
+      add(out, "container", "ISOBMFF (unknown brand " + brand + ")", 85, "",
+          {{"signature", "ftyp box", 85}});
+    }
+  }
+  if (starts_with(d, {'8', 'B', 'P', 'S'})) {
+    add(out, "image", "PSD (Photoshop)", 100,
+        "image/vnd.adobe.photoshop",
+        {{"signature", "8BPS header", 100}});
+  }
+  if (starts_with(d, {0x76, 0x2f, 0x31, 0x01})) {
+    add(out, "image", "OpenEXR", 100, "image/x-exr",
+        {{"signature", "OpenEXR magic", 100}});
+  }
+  if (starts_with(d, {0x00, 0x00, 0x01, 0x00})) {
+    add(out, "image", "ICO (Windows icon)", 90, "image/vnd.microsoft.icon",
+        {{"signature", "ICO header", 90}});
+  }
+  if (starts_with(d, {0x00, 0x00, 0x02, 0x00})) {
+    add(out, "image", "CUR (Windows cursor)", 90, "image/vnd.microsoft.icon",
+        {{"signature", "CUR header", 90}});
+  }
+  if (starts_with(d, {0xff, 0x0a}) ||
+      starts_with(d, {0x00, 0x00, 0x00, 0x0c, 0x4a, 0x58, 0x4c, 0x20})) {
+    add(out, "image", "JPEG XL", 100, "image/jxl",
+        {{"signature", "JPEG XL codestream or container", 100}});
+  }
+  if (starts_with(d, {0x89, 'H', 'D', 'F', 0x0d, 0x0a, 0x1a, 0x0a})) {
+    add(out, "data", "HDF5", 100, "application/x-hdf5",
+        {{"signature", "HDF5 superblock", 100}});
+  }
+
+  // --- Fonts ---
+  if (starts_with(d, {0x00, 0x01, 0x00, 0x00})) {
+    add(out, "font", "TrueType (TTF)", 90, "font/ttf",
+        {{"signature", "TTF sfnt version 1.0", 90}});
+  }
+  if (starts_with(d, {'O', 'T', 'T', 'O'})) {
+    add(out, "font", "OpenType CFF (OTF)", 100, "font/otf",
+        {{"signature", "OTTO sfnt version", 100}});
+  }
+  if (starts_with(d, {'w', 'O', 'F', 'F'})) {
+    add(out, "font", "WOFF", 100, "font/woff",
+        {{"signature", "wOFF header", 100}});
+  }
+  if (starts_with(d, {'w', 'O', 'F', '2'})) {
+    add(out, "font", "WOFF2", 100, "font/woff2",
+        {{"signature", "wOF2 header", 100}});
+  }
+
+  // --- Additional audio ---
+  if (starts_with(d, {'f', 'L', 'a', 'C'})) {
+    add(out, "audio", "FLAC", 100, "audio/flac",
+        {{"signature", "fLaC header", 100}});
+  }
+  if (starts_with(d, {'O', 'g', 'g', 'S'})) {
+    add(out, "audio", "Ogg (Vorbis / Opus / FLAC / Theora)", 100,
+        "application/ogg",
+        {{"signature", "OggS page", 100}});
+  }
+  if (starts_with(d, {'M', 'T', 'h', 'd'})) {
+    add(out, "audio", "Standard MIDI file", 100, "audio/midi",
+        {{"signature", "MThd header", 100}});
+  }
+  if (starts_with(d, {'F', 'O', 'R', 'M'}) && d.size() >= 12 &&
+      starts_with_str(d, "AIFF", 8)) {
+    add(out, "audio", "AIFF", 100, "audio/aiff",
+        {{"signature", "FORM...AIFF", 100}});
+  }
+  if (starts_with(d, {'.', 's', 'n', 'd'})) {
+    add(out, "audio", "Sun AU / NeXT .snd", 100, "audio/basic",
+        {{"signature", ".snd header", 100}});
+  }
+
+  // --- Video ---
+  if (starts_with(d, {0x1a, 0x45, 0xdf, 0xa3})) {
+    add(out, "video", "Matroska / WebM (EBML)", 95, "video/x-matroska",
+        {{"signature", "EBML header", 95}});
+  }
+  if (starts_with(d, {'F', 'L', 'V', 0x01})) {
+    add(out, "video", "Flash FLV", 100, "video/x-flv",
+        {{"signature", "FLV header", 100}});
+  }
+
+  // --- Additional compression / containers ---
+  if (starts_with(d, {0x04, 0x22, 0x4d, 0x18})) {
+    add(out, "container", "LZ4 frame", 100, "application/x-lz4",
+        {{"signature", "LZ4 frame magic", 100}});
+  }
+  if (starts_with(d, {0x28, 0xb5, 0x2f, 0xfd})) {
+    add(out, "container", "Zstandard", 100, "application/zstd",
+        {{"signature", "zstd frame magic", 100}});
+  }
+  if (starts_with(d, {'M', 'S', 'C', 'F'})) {
+    add(out, "container", "Microsoft CAB", 100, "application/vnd.ms-cab-compressed",
+        {{"signature", "MSCF header", 100}});
+  }
+  if (starts_with(d, {0xed, 0xab, 0xee, 0xdb})) {
+    add(out, "container", "RPM package", 100, "application/x-rpm",
+        {{"signature", "RPM lead magic", 100}});
+  }
+  if (starts_with_str(d, "!<arch>\n")) {
+    if (d.size() >= 16 && starts_with_str(d, "debian-binary", 8)) {
+      add(out, "container", "Debian .deb", 100, "application/vnd.debian.binary-package",
+          {{"signature", "ar archive + debian-binary", 100}});
+    } else {
+      add(out, "container", "Unix ar archive", 100, "application/x-archive",
+          {{"signature", "!<arch>\\n", 100}});
+    }
+  }
+
+  // --- Office / documents ---
+  if (starts_with(d, {0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1})) {
+    add(out, "document", "CFBF (OLE / legacy MS Office)", 95,
+        "application/x-cfb",
+        {{"signature", "CFBF compound document header", 95}});
+  }
+  if (starts_with_str(d, "%!PS")) {
+    add(out, "document", "PostScript", 100, "application/postscript",
+        {{"signature", "%!PS marker", 100}});
+  }
+  if (starts_with_str(d, "ITSF")) {
+    add(out, "document", "CHM (Compiled HTML Help)", 100,
+        "application/vnd.ms-htmlhelp",
+        {{"signature", "ITSF header", 100}});
+  }
+  if (starts_with_str(d, "{\\rtf")) {
+    add(out, "document", "RTF", 100, "application/rtf",
+        {{"signature", "{\\rtf marker", 100}});
+  }
+  if (starts_with_str(d, "<?xml")) {
+    add(out, "document", "XML", 90, "application/xml",
+        {{"signature", "<?xml declaration", 90}});
+  }
+
+  // --- Executables / platform ---
+  if (starts_with(d, {0x00, 'a', 's', 'm'})) {
+    add(out, "executable", "WebAssembly (wasm)", 100,
+        "application/wasm",
+        {{"signature", "\\x00asm header", 100}});
+  }
+  if (starts_with(d, {'d', 'e', 'x', '\n'})) {
+    add(out, "executable", "Dalvik DEX", 100,
+        "application/x-dex",
+        {{"signature", "dex\\n header", 100}});
+  }
+  if (starts_with_str(d, "ANDROID!")) {
+    add(out, "firmware", "Android boot image", 100, "",
+        {{"signature", "ANDROID! header", 100}});
+  }
+  if (starts_with(d, {0x3a, 0xff, 0x26, 0xed})) {
+    add(out, "firmware", "Android sparse image", 100, "",
+        {{"signature", "Android sparse magic", 100}});
+  }
+  if (starts_with_str(d, "ANDROID BACKUP")) {
+    add(out, "backup", "Android backup (adb backup)", 100, "",
+        {{"signature", "ANDROID BACKUP header", 100}});
+  }
+  if (starts_with(d, {0xd0, 0x0d, 0xfe, 0xed})) {
+    add(out, "firmware", "Flattened Device Tree (DTB)", 100, "",
+        {{"signature", "FDT magic", 100}});
+  }
+
+  // --- Game-related ---
+  if (starts_with(d, {'N', 'E', 'S', 0x1a})) {
+    add(out, "game-rom", "iNES ROM (NES)", 100, "application/x-nes-rom",
+        {{"signature", "iNES header", 100}});
+  }
+  if (starts_with_str(d, "IWAD") || starts_with_str(d, "PWAD")) {
+    add(out, "game-asset", "Doom WAD", 100, "application/x-doom-wad",
+        {{"signature", "IWAD/PWAD header", 100}});
+  }
+  if (starts_with_str(d, "PACK") && d.size() >= 12) {
+    add(out, "game-asset", "Quake PAK", 90, "",
+        {{"signature", "PACK header", 90}});
+  }
+  if (starts_with(d, {'M', 'P', 'Q', 0x1a})) {
+    add(out, "game-asset", "Blizzard MPQ", 100, "",
+        {{"signature", "MPQ header", 100}});
+  }
+
+  // --- Network capture / forensic ---
+  if (starts_with(d, {0xd4, 0xc3, 0xb2, 0xa1}) ||
+      starts_with(d, {0xa1, 0xb2, 0xc3, 0xd4})) {
+    add(out, "capture", "libpcap", 100, "application/vnd.tcpdump.pcap",
+        {{"signature", "pcap magic", 100}});
+  }
+  if (starts_with(d, {0x0a, 0x0d, 0x0d, 0x0a})) {
+    add(out, "capture", "PCAPNG", 100, "application/vnd.tcpdump.pcap",
+        {{"signature", "PCAPNG section header block", 100}});
+  }
+  if (starts_with_str(d, "Cr24")) {
+    add(out, "container", "Chrome CRX extension", 100,
+        "application/x-chrome-extension",
+        {{"signature", "Cr24 header", 100}});
+  }
+
+  // --- Crypto / keys / certs ---
+  if (starts_with_str(d, "-----BEGIN ")) {
+    if (starts_with_str(d, "-----BEGIN OPENSSH PRIVATE KEY-----")) {
+      add(out, "key", "OpenSSH private key", 100,
+          "application/x-pem-file",
+          {{"signature", "OpenSSH PEM header", 100}});
+    } else if (starts_with_str(d, "-----BEGIN PGP")) {
+      add(out, "key", "PGP armored message/key", 100,
+          "application/pgp",
+          {{"signature", "PGP armor header", 100}});
+    } else {
+      add(out, "key", "PEM-encoded data (certificate/key)", 95,
+          "application/x-pem-file",
+          {{"signature", "-----BEGIN ...-----", 95}});
+    }
+  }
+  if (starts_with_str(d, "Salted__")) {
+    add(out, "crypto", "OpenSSL enc (salted)", 100, "",
+        {{"signature", "Salted__ header (openssl enc)", 100}});
+  }
+
+  // --- Data / science formats ---
+  if (starts_with(d, {0x93, 'N', 'U', 'M', 'P', 'Y'})) {
+    add(out, "data", "NumPy .npy", 100, "",
+        {{"signature", "\\x93NUMPY header", 100}});
+  }
+  if (starts_with_str(d, "PAR1")) {
+    add(out, "data", "Apache Parquet", 95, "",
+        {{"signature", "PAR1 header", 95}});
+  }
+  if (starts_with_str(d, "ARROW1")) {
+    add(out, "data", "Apache Arrow IPC", 100, "",
+        {{"signature", "ARROW1 header", 100}});
+  }
+  if (d.size() >= 2 && d[0] == 0x80 &&
+      (d[1] >= 0x02 && d[1] <= 0x05)) {
+    add(out, "data", "Python pickle (protocol 2-5)", 80,
+        "application/x-pickle",
+        {{"signature", "pickle protocol opcode", 80}});
+  }
+
+  // --- Scripts ---
+  if (starts_with_str(d, "#!")) {
+    add(out, "script", "Script with shebang", 95, "text/x-script",
+        {{"signature", "#! interpreter line", 95}});
+  }
 }
 
 void add_entropy_notes(Report& r) {
